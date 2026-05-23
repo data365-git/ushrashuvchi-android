@@ -4,6 +4,8 @@ import android.content.Context
 import com.example.audio.RecordingFileManager
 import com.example.audio.RecordingSidecar
 import com.example.data.api.GeminiClient
+import com.example.data.api.GeminiException
+import com.example.data.api.GeminiResult
 import com.example.data.database.AppDatabase
 import com.example.data.dao.FolderDao
 import com.example.data.dao.MeetingDao
@@ -197,24 +199,53 @@ class MeetingRepository(
         val fullSystemPrompt = transcriptionSystemPrompt + "\n\n" + SCHEMA_INSTRUCTION
 
         val aiResponse = if (audioFile != null && audioFile.length() < 18 * 1024 * 1024) {
+            val mime = when (audioFile.extension.lowercase()) {
+                "m4a", "mp4", "aac" -> "audio/aac"
+                "wav"               -> "audio/wav"
+                "mp3"               -> "audio/mpeg"
+                "ogg", "oga", "opus"-> "audio/ogg"
+                "flac"              -> "audio/flac"
+                "aiff", "aif"       -> "audio/aiff"
+                else -> null
+            }
+            if (mime == null) {
+                meetingDao.updateMeeting(meeting.copy(status = "FAILED"))
+                throw GeminiException(
+                    "Unsupported audio format (.${audioFile.extension}). Re-record this meeting — legacy 3GP/AMR files are not accepted by Gemini."
+                )
+            }
             val b64 = android.util.Base64.encodeToString(audioFile.readBytes(), android.util.Base64.NO_WRAP)
             val userPrompt = "Transcribe the attached audio and structure the meeting into the JSON schema. Language: $languageCode."
-            GeminiClient.getAiResponse(
+            val aiResult = GeminiClient.getAiResponse(
                 prompt = userPrompt,
                 systemInstructionText = fullSystemPrompt,
                 modelName = sttModel,
                 audioBase64 = b64,
-                audioMimeType = "audio/3gpp",
+                audioMimeType = mime,
                 requestJson = true
             )
+            when (aiResult) {
+                is GeminiResult.Text -> aiResult.text
+                is GeminiResult.Error -> {
+                    meetingDao.updateMeeting(meeting.copy(status = "FAILED"))
+                    throw GeminiException("${aiResult.status ?: "Error"} (HTTP ${aiResult.httpCode ?: "—"}): ${aiResult.message}")
+                }
+            }
         } else {
             val userPrompt = "Meeting topic: $topic\nLanguage: $languageCode\n\nGenerate meeting summary, chapters, transcript, tasks, and refined topics based on this topic."
-            GeminiClient.getAiResponse(
+            val aiResult = GeminiClient.getAiResponse(
                 prompt = userPrompt,
                 systemInstructionText = fullSystemPrompt,
                 modelName = llmModel,
                 requestJson = true
             )
+            when (aiResult) {
+                is GeminiResult.Text -> aiResult.text
+                is GeminiResult.Error -> {
+                    meetingDao.updateMeeting(meeting.copy(status = "FAILED"))
+                    throw GeminiException("${aiResult.status ?: "Error"} (HTTP ${aiResult.httpCode ?: "—"}): ${aiResult.message}")
+                }
+            }
         }
 
         try {
@@ -552,6 +583,10 @@ class MeetingRepository(
     ): String = withContext(Dispatchers.IO) {
         val transcriptContext = transcriptList.joinToString("\n") { "[${it.speaker}]: ${it.text}" }
         val prompt = "Transcript:\n$transcriptContext\n\nQuestion:\n$userQuestion"
-        GeminiClient.getAiResponse(prompt, chatSystemPrompt, modelName = llmModel)
+        val aiResult = GeminiClient.getAiResponse(prompt, chatSystemPrompt, modelName = llmModel)
+        when (aiResult) {
+            is GeminiResult.Text -> aiResult.text
+            is GeminiResult.Error -> throw GeminiException("${aiResult.status ?: "Error"} (HTTP ${aiResult.httpCode ?: "—"}): ${aiResult.message}")
+        }
     }
 }

@@ -327,7 +327,8 @@ fun MeetingsListScreen(
                             meeting = meeting,
                             strings = strings,
                             onClick = { onNavigateToDetail(meeting.id) },
-                            onStarToggle = { viewModel.toggleMeetingStarred(meeting) }
+                            onStarToggle = { viewModel.toggleMeetingStarred(meeting) },
+                            onRetry = { viewModel.generateAiSummary(meeting.id, meeting.title, meeting.audioPath, meeting.folders) }
                         )
                     }
                 }
@@ -341,7 +342,8 @@ fun MeetingRowItem(
     meeting: Meeting,
     strings: com.example.data.localization.AppStrings,
     onClick: () -> Unit,
-    onStarToggle: () -> Unit
+    onStarToggle: () -> Unit,
+    onRetry: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier
@@ -452,9 +454,16 @@ fun MeetingRowItem(
                         else -> meeting.status to MaterialTheme.colorScheme.surfaceVariant
                     }
                     AssistChip(
-                        onClick = {},
+                        onClick = {
+                            if (meeting.status == "FAILED") {
+                                onRetry()
+                            }
+                        },
                         label = { Text(badge.first, style = MaterialTheme.typography.labelSmall, maxLines = 1) },
-                        colors = AssistChipDefaults.assistChipColors(containerColor = badge.second)
+                        colors = AssistChipDefaults.assistChipColors(containerColor = badge.second),
+                        leadingIcon = if (meeting.status == "FAILED") {
+                            { Icon(Icons.Default.Refresh, null, modifier = Modifier.size(14.dp)) }
+                        } else null
                     )
                     if (meeting.isDemo) {
                         AssistChip(
@@ -1080,6 +1089,25 @@ fun MeetingDetailScreen(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
+            val processingId by viewModel.aiProcessingMeetingId.collectAsState()
+            if (processingId == meetingId) {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            "Gemini is transcribing your recording…",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
             ScrollableTabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -1163,12 +1191,15 @@ fun SummaryTab(
 
         // Summary Content MD Card or Generate AI card
         item {
-            if (meeting.summary.isBlank() && chapters.isEmpty() && meeting.status == "RECORDED") {
+            val needsAi = meeting.summary.isBlank() && chapters.isEmpty()
+            val isFailed = meeting.status == "FAILED"
+            if (needsAi && (meeting.status == "RECORDED" || isFailed)) {
                 GenerateAiCard(
                     meeting = meeting,
                     viewModel = viewModel,
-                    label = "No summary yet",
-                    body = "Run Gemini to transcribe this recording and produce summary, chapters, and tasks."
+                    label = if (isFailed) "Generation failed" else "No summary yet",
+                    body = if (isFailed) "We couldn't process this audio. Tap Retry to try again." else "Generate with Gemini to see the AI summary, chapters, and tasks.",
+                    buttonText = if (isFailed) "Retry" else "Generate with AI"
                 )
             } else {
                 Text(
@@ -1291,12 +1322,14 @@ fun RefinedTranscriptTab(
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
     if (topics.isEmpty()) {
-        if (meeting.status == "RECORDED") {
+        val isFailed = meeting.status == "FAILED"
+        if (meeting.status == "RECORDED" || isFailed) {
             GenerateAiCard(
                 meeting = meeting,
                 viewModel = viewModel,
-                label = "No refined transcript yet",
-                body = "Run Gemini to transcribe this recording and produce refined topics."
+                label = if (isFailed) "Generation failed" else "No refined transcript yet",
+                body = if (isFailed) "We couldn't process this audio. Tap Retry to try again." else "Generate with Gemini to see the AI summary, chapters, and tasks.",
+                buttonText = if (isFailed) "Retry" else "Generate with AI"
             )
         } else {
             Column(
@@ -1819,12 +1852,15 @@ fun TranscriptTab(
     val playbackMs by viewModel.playbackMs.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
 
-    if (transcriptLines.isEmpty() && meeting?.status == "RECORDED") {
+    val needsAi2 = transcriptLines.isEmpty()
+    val isFailed2 = meeting?.status == "FAILED"
+    if (needsAi2 && (meeting?.status == "RECORDED" || isFailed2)) {
         GenerateAiCard(
-            meeting = meeting,
+            meeting = meeting!!,
             viewModel = viewModel,
-            label = "No transcript yet",
-            body = "Run Gemini to transcribe this recording and produce summary, chapters, and tasks."
+            label = if (isFailed2) "Generation failed" else "No transcript yet",
+            body = if (isFailed2) "We couldn't process this audio. Tap Retry to try again." else "Generate with AI to see the full transcript.",
+            buttonText = if (isFailed2) "Retry" else "Generate with AI"
         )
         return
     }
@@ -2998,7 +3034,8 @@ private fun GenerateAiCard(
     meeting: com.example.data.model.Meeting,
     viewModel: AppViewModel,
     label: String,
-    body: String
+    body: String,
+    buttonText: String = "Generate with AI"
 ) {
     val processingId by viewModel.aiProcessingMeetingId.collectAsState()
     val error by viewModel.aiError.collectAsState()
@@ -3021,7 +3058,7 @@ private fun GenerateAiCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (busy) { CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp); Spacer(Modifier.width(10.dp)) }
-                Text(if (busy) "Generating…" else "Generate with AI")
+                Text(if (busy) "Generating…" else buttonText)
             }
             error?.let {
                 Spacer(Modifier.height(8.dp))

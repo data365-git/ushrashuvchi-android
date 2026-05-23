@@ -786,8 +786,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun startRecording(context: Context) {
         try {
             val cacheDir = context.cacheDir
-            recordFile = File.createTempFile("meeting_recording_", ".3gp", cacheDir)
-            
+            recordFile = File.createTempFile("meeting_recording_", ".m4a", cacheDir)
+
             // Set up MediaRecorder
             recorder = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 MediaRecorder(context)
@@ -795,9 +795,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 @Suppress("DEPRECATION")
                 MediaRecorder()
             }.apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
-                setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+                setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioSamplingRate(44100)
+                setAudioChannels(1)
+                setAudioEncodingBitRate(64_000)
                 setOutputFile(recordFile?.absolutePath)
                 prepare()
                 start()
