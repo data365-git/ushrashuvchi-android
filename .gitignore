@@ -1,0 +1,44 @@
+*.iml
+.gradle
+.kotlin
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+Thumbs.db
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Secrets — never commit these
+.env
+*.jks
+*.keystore
+debug.keystore
+secrets.properties
+keystore.properties
+*.local.properties
+
+# Claude Code workspace
+.claude/
+
+# Test output
+/test-results/
+/reports/
+jacoco/
+*.exec
+
+# OS / IDE crash dumps
+hs_err_pid*.log
+
+# Audio recordings (belt-and-suspenders; real recordings live outside src/)
+recordings/
+*.m4a
+*.3gp
+*.mp4

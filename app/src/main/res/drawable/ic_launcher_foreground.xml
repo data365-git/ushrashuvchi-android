@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Audio Wave Propagating Left -->
+    <path
+        android:pathData="M24,44 A24,24 0 0 0 24,64"
+        android:strokeColor="#60A5FA"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.6" />
+
+    <!-- Audio Wave Propagating Right -->
+    <path
+        android:pathData="M84,44 A24,24 0 0 1 84,64"
+        android:strokeColor="#60A5FA"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.6" />
+
+    <!-- Main Chat Bubble / Meeting Node -->
+    <path
+        android:pathData="M38,36 h32 a6,6 0 0 1 6,6 v20 a6,6 0 0 1 -6,6 h-20 l-8,8 v-8 a6,6 0 0 1 -6,-6 v-20 a6,6 0 0 1 6,-6 z"
+        android:fillColor="#1E293B"
+        android:strokeColor="#60A5FA"
+        android:strokeWidth="3.5"
+        android:strokeLineJoin="round" />
+
+    <!-- Sound Wave Bars inside bubble (representing speech-to-text / transcription) -->
+    <path
+        android:pathData="M47,48 v8"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round" />
+
+    <path
+        android:pathData="M54,44 v16"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round" />
+
+    <path
+        android:pathData="M61,48 v8"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round" />
+
+</vector>

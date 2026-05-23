@@ -1,0 +1,6 @@
+{
+  "name": "Ushrashuvchi",
+  "description": "AI meeting companion of MeetingMind workspace for recordings, summary Chapter extraction, transcript highlights, custom task checklist, and Gemini Ask-AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
