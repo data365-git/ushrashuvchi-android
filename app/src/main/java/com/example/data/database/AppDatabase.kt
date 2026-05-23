@@ -25,7 +25,7 @@ import com.example.data.model.TranscriptLine
         Folder::class,
         RecordingSession::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -84,6 +84,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE folders ADD COLUMN iconKey TEXT NOT NULL DEFAULT 'folder'")
+                db.execSQL("ALTER TABLE folders ADD COLUMN parentId INTEGER")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_parentId ON folders(parentId)")
+                db.execSQL("ALTER TABLE meetings ADD COLUMN audioSource TEXT NOT NULL DEFAULT 'OFFLINE_MEET'")
+                db.execSQL("ALTER TABLE recording_sessions ADD COLUMN audioSource TEXT NOT NULL DEFAULT 'OFFLINE_MEET'")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -91,7 +101,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "ushrashuvchi_db"
                 )
-                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

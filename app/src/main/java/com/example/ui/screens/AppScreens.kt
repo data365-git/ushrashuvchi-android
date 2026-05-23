@@ -1287,7 +1287,7 @@ fun RefinedTranscriptTab(
         viewModel.parseRefinedTranscript(meeting.refinedTranscriptJson)
     }
 
-    var favoritedTopics by remember { mutableStateOf(setOf<String>()) }
+    val favoritedTopics by remember { derivedStateOf { viewModel.starredTopicsForMeeting(meeting.id) } }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
     if (topics.isEmpty()) {
@@ -1507,11 +1507,7 @@ fun RefinedTranscriptTab(
 
                             Row {
                                 IconButton(onClick = {
-                                    favoritedTopics = if (isStarred) {
-                                        favoritedTopics - topic.id
-                                    } else {
-                                        favoritedTopics + topic.id
-                                    }
+                                    viewModel.toggleTopicStar(meeting.id, topic.id)
                                 }) {
                                     Icon(
                                         imageVector = if (isStarred) Icons.Default.Star else Icons.Default.StarBorder,
@@ -2247,6 +2243,11 @@ fun AskAiScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.clearChatForMeeting(meetingId) }) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = strings.clearChat)
+                    }
                 }
             )
         }
@@ -2258,7 +2259,7 @@ fun AskAiScreen(
                 .background(MaterialTheme.colorScheme.background)
         ) {
             // Suggestion chips
-            val suggestionsUz = listOf("What is key agreement?", "List action items")
+            val suggestions = listOf(strings.aiSuggestion1, strings.aiSuggestion2)
 
             Row(
                 modifier = Modifier
@@ -2266,7 +2267,7 @@ fun AskAiScreen(
                     .padding(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                suggestionsUz.forEach { sug ->
+                suggestions.forEach { sug ->
                     SuggestionChip(
                         onClick = {
                             viewModel.askAiQuestion(meetingId, sug, transcriptLines)

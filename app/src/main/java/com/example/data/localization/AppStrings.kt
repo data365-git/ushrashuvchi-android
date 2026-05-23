@@ -81,7 +81,10 @@ data class AppStrings(
     val geminiKeyWarning: String,
     val geminiKeyStatusConfigured: String,
     val geminiKeyStatusPlaceholder: String,
-    val geminiKeyErrorMsg: String
+    val geminiKeyErrorMsg: String,
+    val aiSuggestion1: String,
+    val aiSuggestion2: String,
+    val clearChat: String
 )
 
 object Translations {
@@ -160,7 +163,10 @@ object Translations {
         geminiKeyWarning = "Note: The key is stored securely in your app's local private storage. Never share your key.",
         geminiKeyStatusConfigured = "API key is configured and active.",
         geminiKeyStatusPlaceholder = "Using default build key or unconfigured.",
-        geminiKeyErrorMsg = "Please configure a valid GEMINI_API_KEY in the Settings screen or in your Secrets panel."
+        geminiKeyErrorMsg = "Please configure a valid GEMINI_API_KEY in the Settings screen or in your Secrets panel.",
+        aiSuggestion1 = "Key agreements?",
+        aiSuggestion2 = "List action items",
+        clearChat = "Clear chat"
     )
 
     val ru = AppStrings(
@@ -238,7 +244,10 @@ object Translations {
         geminiKeyWarning = "Примечание: Ключ надежно хранится в локальной памяти приложения. Никогда не делитесь им.",
         geminiKeyStatusConfigured = "API-ключ настроен и активен.",
         geminiKeyStatusPlaceholder = "Используется ключ сборки по умолчанию или не настроен.",
-        geminiKeyErrorMsg = "Пожалуйста, настройте действительный GEMINI_API_KEY в настройках приложения или панели секретов."
+        geminiKeyErrorMsg = "Пожалуйста, настройте действительный GEMINI_API_KEY в настройках приложения или панели секретов.",
+        aiSuggestion1 = "Ключевые решения?",
+        aiSuggestion2 = "Список задач",
+        clearChat = "Очистить чат"
     )
 
     val uz = AppStrings(
@@ -316,7 +325,10 @@ object Translations {
         geminiKeyWarning = "Eslatma: Kalit ilovaning mahalliy xavfsiz xotirasida saqlanadi. Kalitingizni hech kimga ulashmang.",
         geminiKeyStatusConfigured = "API kaliti sozlangan va faol.",
         geminiKeyStatusPlaceholder = "Ishlab chiqarilgan standart kalit ishlatilmoqda yoki sozlanmagan.",
-        geminiKeyErrorMsg = "Iltimos, Sozlamalar ekranida yoki Secrets panelida haqiqiy GEMINI_API_KEY sozlang."
+        geminiKeyErrorMsg = "Iltimos, Sozlamalar ekranida yoki Secrets panelida haqiqiy GEMINI_API_KEY sozlang.",
+        aiSuggestion1 = "Asosiy kelishuvlar?",
+        aiSuggestion2 = "Vazifalar ro'yxati",
+        clearChat = "Chatni tozalash"
     )
 
     fun get(language: Language): AppStrings = when (language) {

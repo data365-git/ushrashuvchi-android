@@ -90,6 +90,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedFolderId = MutableStateFlow<Int?>(null)
     val selectedFolderId: StateFlow<Int?> = _selectedFolderId.asStateFlow()
 
+    // Meeting-type filter for Tab 1 source chips (null = all)
+    private val _selectedAudioSource = MutableStateFlow<String?>(null)
+    val selectedAudioSource: StateFlow<String?> = _selectedAudioSource.asStateFlow()
+    fun setSelectedAudioSource(src: String?) { _selectedAudioSource.value = src }
+
+    // Pre-recording meeting type (persisted across sessions)
+    private val _meetingAudioSource = MutableStateFlow(sharedPrefs.getString("meeting_audio_source", "OFFLINE_MEET") ?: "OFFLINE_MEET")
+    val meetingAudioSource: StateFlow<String> = _meetingAudioSource.asStateFlow()
+    fun setMeetingAudioSource(src: String) {
+        _meetingAudioSource.value = src
+        sharedPrefs.edit().putString("meeting_audio_source", src).apply()
+    }
+
     private val _amplitudeWaveform = MutableStateFlow<List<Int>>(emptyList())
     val amplitudeWaveform: StateFlow<List<Int>> = _amplitudeWaveform.asStateFlow()
 
@@ -400,19 +413,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _selectedFolder.value = folder
     }
 
-    // Flow representing final filtered meetings — uses DB full-text search when query non-blank
+    // Flow representing final filtered meetings — folderId + audioSource + search
     val filteredMeetings: StateFlow<List<Meeting>> = combine(
         _searchText.flatMapLatest { q ->
             if (q.isBlank()) repository.allMeetings else repository.searchMeetings(q)
         },
-        _searchText,
-        _selectedFolder
-    ) { meetings, _, folder ->
-        meetings.filter { meeting ->
-            if (folder == "All") true
-            else if (folder == "Starred") meeting.isStarred
-            else meeting.folders == folder
-        }
+        _selectedFolderId,
+        _selectedAudioSource
+    ) { meetings, folderId, audioSrc ->
+        meetings
+            .filter { if (folderId == null) true else it.folderId == folderId }
+            .filter { if (audioSrc == null) true else it.audioSource == audioSrc }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // --- All tasks across meetings ---
@@ -605,11 +616,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _selectedFolderId.value = folderId
     }
 
-    fun createFolder(name: String, colorHex: String) {
+    fun createFolder(name: String, colorHex: String, parentId: Int? = null, iconKey: String = "folder") {
         viewModelScope.launch {
             val slug = name.lowercase().replace("[^a-z0-9]+".toRegex(), "-").trim('-')
-            db.folderDao().insert(Folder(name = name, slug = slug, colorHex = colorHex))
+            db.folderDao().insert(Folder(name = name, slug = slug, colorHex = colorHex, parentId = parentId, iconKey = iconKey))
         }
+    }
+
+    fun foldersUnder(parentId: Int?): kotlinx.coroutines.flow.Flow<List<com.example.data.model.Folder>> =
+        if (parentId == null) db.folderDao().getRootFolders() else db.folderDao().getChildren(parentId)
+
+    fun recordingsIn(folderId: Int?): kotlinx.coroutines.flow.Flow<List<Meeting>> =
+        if (folderId == null) repository.allMeetings else db.meetingDao().getByFolder(folderId)
+
+    fun allFoldersForTree(): kotlinx.coroutines.flow.Flow<List<com.example.data.model.Folder>> =
+        db.folderDao().getAllForTree()
+
+    fun reparentFolder(id: Int, newParentId: Int?) {
+        viewModelScope.launch { repository.reparentFolder(id, newParentId) }
+    }
+
+    fun moveRecordingsToFolder(meetingIds: List<Int>, folderId: Int) {
+        viewModelScope.launch { repository.moveRecordingsToFolder(meetingIds, folderId) }
     }
 
     fun renameFolder(id: Int, newName: String) {
@@ -962,6 +990,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // --- Refined-topic starred state (survives tab switches) ---
+    private val _starredTopics = MutableStateFlow<Map<Int, Set<String>>>(emptyMap())
+
+    fun toggleTopicStar(meetingId: Int, topicId: String) {
+        val current = _starredTopics.value[meetingId] ?: emptySet()
+        val updated = if (topicId in current) current - topicId else current + topicId
+        _starredTopics.value = _starredTopics.value + (meetingId to updated)
+    }
+
+    fun starredTopicsForMeeting(meetingId: Int): Set<String> =
+        _starredTopics.value[meetingId] ?: emptySet()
+
     // --- Ask AI Chat State ---
     private val _isChatLoading = MutableStateFlow(false)
     val isChatLoading: StateFlow<Boolean> = _isChatLoading.asStateFlow()
@@ -988,6 +1028,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
             _isChatLoading.value = false
         }
+    }
+
+    fun clearChatForMeeting(meetingId: Int) {
+        viewModelScope.launch { repository.clearChatForMeeting(meetingId) }
     }
 
     // Parse Chapters helper

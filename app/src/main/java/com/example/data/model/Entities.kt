@@ -21,7 +21,8 @@ data class Meeting(
     val audioRelativePath: String? = null,
     val isDeleted: Boolean = false,
     val deletedAt: Long? = null,
-    val isDemo: Boolean = false
+    val isDemo: Boolean = false,
+    val audioSource: String = "OFFLINE_MEET" // OFFLINE_MEET | CALL | ONLINE_MEET | VOICE_NOTE | OTHER
 )
 
 @Entity(tableName = "transcript_lines")
@@ -80,15 +81,17 @@ data class SpeakerContextItem(
     val contribution: String
 )
 
-@Entity(tableName = "folders")
+@Entity(tableName = "folders", indices = [androidx.room.Index("parentId")])
 data class Folder(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val name: String,
     val slug: String,
     val colorHex: String = "#3B82F6",
+    val iconKey: String = "folder", // folder | mic | phone | screen | note | star | work | inbox | trash
     val sortOrder: Int = 0,
     val isSystem: Boolean = false,
-    val isTrash: Boolean = false
+    val isTrash: Boolean = false,
+    val parentId: Int? = null
 )
 
 @Entity(tableName = "recording_sessions")
@@ -105,6 +108,7 @@ data class RecordingSession(
     val sizeBytes: Long = 0,
     val checksum: String? = null,
     val state: String,
+    val audioSource: String = "OFFLINE_MEET",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val deletedAt: Long? = null

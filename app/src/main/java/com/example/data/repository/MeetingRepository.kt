@@ -171,6 +171,10 @@ class MeetingRepository(
         meetingDao.insertChatMessage(msg)
     }
 
+    suspend fun clearChatForMeeting(meetingId: Int) = withContext(Dispatchers.IO) {
+        meetingDao.deleteChatMessages(meetingId)
+    }
+
     /**
      * Integrates with real Gemini API to process meeting topic and generate high-fidelity realistic datasets
      */
@@ -485,12 +489,55 @@ class MeetingRepository(
     suspend fun seedDefaultFoldersIfEmpty() = withContext(Dispatchers.IO) {
         val dao = folderDao ?: return@withContext
         if (dao.count() == 0) {
-            dao.insert(Folder(name = "Inbox", slug = "_inbox", isSystem = true, sortOrder = 0, colorHex = "#3B82F6"))
-            dao.insert(Folder(name = "Team Sync", slug = "team-sync", sortOrder = 1, colorHex = "#8B5CF6"))
-            dao.insert(Folder(name = "Client Call", slug = "client-call", sortOrder = 2, colorHex = "#10B981"))
-            dao.insert(Folder(name = "1-on-1", slug = "1-on-1", sortOrder = 3, colorHex = "#F59E0B"))
-            dao.insert(Folder(name = "Trash", slug = ".trash", isSystem = true, isTrash = true, sortOrder = 999, colorHex = "#EF4444"))
+            dao.insert(Folder(name = "Inbox",            slug = "_inbox",        isSystem = true,  sortOrder = 0,   colorHex = "#6B7280", iconKey = "inbox"))
+            dao.insert(Folder(name = "Offline Meetings", slug = "offline-meets", isSystem = true,  sortOrder = 1,   colorHex = "#3B82F6", iconKey = "mic"))
+            dao.insert(Folder(name = "Calls",            slug = "calls",         isSystem = true,  sortOrder = 2,   colorHex = "#10B981", iconKey = "phone"))
+            dao.insert(Folder(name = "Online Meetings",  slug = "online-meets",  isSystem = true,  sortOrder = 3,   colorHex = "#8B5CF6", iconKey = "screen"))
+            dao.insert(Folder(name = "Voice Notes",      slug = "voice-notes",   isSystem = true,  sortOrder = 4,   colorHex = "#F59E0B", iconKey = "note"))
+            dao.insert(Folder(name = "Trash",            slug = ".trash",        isSystem = true,  isTrash = true,  sortOrder = 999, colorHex = "#EF4444", iconKey = "trash"))
         }
+    }
+
+    suspend fun foldersUnder(parentId: Int?): kotlinx.coroutines.flow.Flow<List<Folder>> {
+        val dao = folderDao ?: return kotlinx.coroutines.flow.flowOf(emptyList())
+        return if (parentId == null) dao.getRootFolders() else dao.getChildren(parentId)
+    }
+
+    fun recordingsIn(folderId: Int?): kotlinx.coroutines.flow.Flow<List<Meeting>> {
+        return if (folderId == null) {
+            allMeetings
+        } else {
+            meetingDao.getByFolder(folderId)
+        }
+    }
+
+    suspend fun breadcrumb(folderId: Int?): List<Folder> = withContext(Dispatchers.IO) {
+        if (folderId == null) return@withContext emptyList()
+        val dao = folderDao ?: return@withContext emptyList()
+        val path = mutableListOf<Folder>()
+        var current = dao.getById(folderId)
+        while (current != null) {
+            path.add(0, current)
+            current = current.parentId?.let { dao.getById(it) }
+        }
+        path
+    }
+
+    suspend fun reparentFolder(id: Int, newParentId: Int?) = withContext(Dispatchers.IO) {
+        val dao = folderDao ?: return@withContext
+        // Cycle check: walk up from newParentId to ensure id is not an ancestor
+        if (newParentId != null) {
+            var check = dao.getById(newParentId)
+            while (check != null) {
+                if (check.id == id) return@withContext // would create a cycle
+                check = check.parentId?.let { dao.getById(it) }
+            }
+        }
+        dao.reparent(id, newParentId)
+    }
+
+    suspend fun moveRecordingsToFolder(meetingIds: List<Int>, folderId: Int) = withContext(Dispatchers.IO) {
+        meetingIds.forEach { meetingDao.moveToFolder(it, folderId) }
     }
 
     /**

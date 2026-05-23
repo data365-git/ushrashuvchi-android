@@ -90,6 +90,28 @@ fun RecordingsLibraryScreen(
                 )
             }
 
+            // Audio source filter chips
+            val selectedAudioSource by viewModel.selectedAudioSource.collectAsStateWithLifecycle()
+            val sourceFilters = listOf(
+                null to "All",
+                "OFFLINE_MEET" to "Offline",
+                "CALL" to "Calls",
+                "ONLINE_MEET" to "Online",
+                "VOICE_NOTE" to "Notes"
+            )
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(sourceFilters) { (src, label) ->
+                    FilterChip(
+                        selected = selectedAudioSource == src,
+                        onClick = { viewModel.setSelectedAudioSource(src) },
+                        label = { Text(label) }
+                    )
+                }
+            }
+
             // Folder chips
             val nonTrashFolders = folders.filter { !it.isTrash }
             LazyRow(

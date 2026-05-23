@@ -59,6 +59,9 @@ interface MeetingDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChatMessage(msg: ChatMessage)
 
+    @Query("DELETE FROM chat_messages WHERE meetingId = :meetingId")
+    suspend fun deleteChatMessages(meetingId: Int)
+
     @Query("UPDATE meetings SET isDeleted = 1, deletedAt = :deletedAt WHERE id = :id")
     suspend fun softDelete(id: Int, deletedAt: Long)
 

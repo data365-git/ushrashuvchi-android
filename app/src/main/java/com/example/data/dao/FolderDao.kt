@@ -34,4 +34,25 @@ interface FolderDao {
 
     @Query("SELECT COUNT(*) FROM folders")
     suspend fun count(): Int
+
+    @Query("SELECT * FROM folders WHERE parentId IS NULL AND isTrash = 0 ORDER BY sortOrder ASC")
+    fun getRootFolders(): Flow<List<Folder>>
+
+    @Query("SELECT * FROM folders WHERE parentId = :parentId ORDER BY sortOrder ASC")
+    fun getChildren(parentId: Int): Flow<List<Folder>>
+
+    @Query("SELECT * FROM folders WHERE isTrash = 0 ORDER BY sortOrder ASC")
+    fun getAllForTree(): Flow<List<Folder>>
+
+    @Query("UPDATE folders SET parentId = :newParent WHERE id = :id")
+    suspend fun reparent(id: Int, newParent: Int?)
+
+    @Query("SELECT COUNT(*) FROM meetings WHERE folderId = :id AND isDeleted = 0")
+    suspend fun recordingCount(id: Int): Int
+
+    @Query("SELECT COUNT(*) FROM folders WHERE parentId = :id")
+    suspend fun childCount(id: Int): Int
+
+    @Query("SELECT SUM(durationSeconds) FROM meetings WHERE folderId = :id AND isDeleted = 0")
+    suspend fun totalDuration(id: Int): Long?
 }

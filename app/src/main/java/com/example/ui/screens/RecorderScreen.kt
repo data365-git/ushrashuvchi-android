@@ -115,6 +115,25 @@ fun RecorderScreen(viewModel: AppViewModel, onClose: () -> Unit) {
         Spacer(modifier = Modifier.height(32.dp))
 
         if (!isActive) {
+            val meetingAudioSource by viewModel.meetingAudioSource.collectAsStateWithLifecycle()
+            val audioSources = listOf(
+                "OFFLINE_MEET" to "Offline",
+                "CALL" to "Call",
+                "ONLINE_MEET" to "Online",
+                "VOICE_NOTE" to "Note"
+            )
+            Text("Meeting type", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                audioSources.forEach { (src, label) ->
+                    FilterChip(
+                        selected = meetingAudioSource == src,
+                        onClick = { viewModel.setMeetingAudioSource(src) },
+                        label = { Text(label) }
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
                 value = topic,
                 onValueChange = { topic = it },
