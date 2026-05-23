@@ -17,6 +17,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.ui.screens.*
+import com.example.ui.screens.StorageScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.AppViewModel
 
@@ -47,7 +48,8 @@ class MainActivity : ComponentActivity() {
               MainScaffold(
                 viewModel = viewModel,
                 onNavigateToRecorder = { navController.navigate("recorder") },
-                onNavigateToMeeting = { id -> navController.navigate("meeting_detail/$id") }
+                onNavigateToMeeting = { id -> navController.navigate("meeting_detail/$id") },
+                onNavigateToStorage = { navController.navigate("storage") }
               )
             }
 
@@ -150,6 +152,14 @@ class MainActivity : ComponentActivity() {
               RecorderScreen(
                 viewModel = viewModel,
                 onClose = { navController.popBackStack() }
+              )
+            }
+
+            // Storage screen
+            composable("storage") {
+              StorageScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() }
               )
             }
           }

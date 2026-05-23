@@ -2396,7 +2396,8 @@ fun SettingsScreen(
     viewModel: AppViewModel,
     onLogout: () -> Unit = {},
     onBack: () -> Unit,
-    onNavigateToAllTasks: (() -> Unit)? = null
+    onNavigateToAllTasks: (() -> Unit)? = null,
+    onNavigateToStorage: (() -> Unit)? = null
 ) {
     val strings by viewModel.strings.collectAsState()
     val isDarkTheme by viewModel.isDarkTheme.collectAsState()
@@ -2674,6 +2675,17 @@ fun SettingsScreen(
                 }
 
                 // Storage usage card
+                if (onNavigateToStorage != null) {
+                    OutlinedButton(
+                        onClick = onNavigateToStorage,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Storage, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Manage storage →")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
                 StorageUsageCard(
                     onEmptyTrash = { viewModel.emptyTrash() },
                     onRescan = { viewModel.rescanRecordings() }
@@ -2759,7 +2771,7 @@ fun SettingsScreen(
 @Composable
 fun AllTasksScreen(
     viewModel: AppViewModel,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
     onOpenMeeting: (Int) -> Unit = {}
 ) {
     val allTasks by viewModel.allTasks.collectAsState()
@@ -2767,15 +2779,54 @@ fun AllTasksScreen(
     // Build a map meetingId -> title from current snapshot
     val meetingTitleMap = remember(meetings) { meetings.associate { it.id to it.title } }
 
-    var filter by remember { mutableStateOf("All") } // All / Open / Completed
+    var filter by remember { mutableStateOf("All") } // All / Open / Overdue / Completed
     var editingTask by remember { mutableStateOf<com.example.data.model.Task?>(null) }
+    var showQuickAdd by remember { mutableStateOf(false) }
 
-    val displayed = remember(allTasks, filter) {
-        when (filter) {
+    val now = remember { System.currentTimeMillis() }
+    val displayed = remember(allTasks, filter, now) {
+        val filtered = when (filter) {
             "Open" -> allTasks.filter { !it.isCompleted }
+            "Overdue" -> allTasks.filter { !it.isCompleted && it.dueAt != null && it.dueAt < now }
             "Completed" -> allTasks.filter { it.isCompleted }
             else -> allTasks
         }
+        filtered.sortedWith(compareBy(
+            { it.isCompleted },
+            { if (it.dueAt != null && it.dueAt < now && !it.isCompleted) 0 else 1 },
+            { it.dueAt ?: Long.MAX_VALUE }
+        ))
+    }
+
+    if (showQuickAdd) {
+        var quickTitle by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showQuickAdd = false },
+            title = { Text("New task") },
+            text = {
+                OutlinedTextField(
+                    value = quickTitle,
+                    onValueChange = { quickTitle = it },
+                    label = { Text("Task title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (quickTitle.isNotBlank()) {
+                            viewModel.addCustomTask(meetingId = 0, title = quickTitle, assignee = "")
+                            showQuickAdd = false
+                        }
+                    },
+                    enabled = quickTitle.isNotBlank()
+                ) { Text("Add") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showQuickAdd = false }) { Text("Cancel") }
+            }
+        )
     }
 
     editingTask?.let { t ->
@@ -2792,12 +2843,17 @@ fun AllTasksScreen(
         topBar = {
             TopAppBar(
                 title = { Text("All tasks") },
-                navigationIcon = {
+                navigationIcon = if (onBack != null) ({
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
-                }
+                }) else ({})
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showQuickAdd = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Add task")
+            }
         }
     ) { innerPadding ->
         Column(
@@ -2812,7 +2868,7 @@ fun AllTasksScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                listOf("All", "Open", "Completed").forEach { f ->
+                listOf("All", "Open", "Overdue", "Completed").forEach { f ->
                     FilterChip(
                         selected = filter == f,
                         onClick = { filter = f },

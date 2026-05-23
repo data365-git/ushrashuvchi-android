@@ -43,7 +43,8 @@ enum class BottomTab(val label: String, val icon: ImageVector) {
 fun MainScaffold(
     viewModel: AppViewModel,
     onNavigateToRecorder: () -> Unit,
-    onNavigateToMeeting: (Int) -> Unit
+    onNavigateToMeeting: (Int) -> Unit,
+    onNavigateToStorage: () -> Unit = {}
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(BottomTab.RECORDINGS) }
 
@@ -102,7 +103,8 @@ fun MainScaffold(
                 BottomTab.SETTINGS -> SettingsScreen(
                     viewModel = viewModel,
                     onBack = {},
-                    onNavigateToAllTasks = { selectedTab = BottomTab.TASKS }
+                    onNavigateToAllTasks = { selectedTab = BottomTab.TASKS },
+                    onNavigateToStorage = onNavigateToStorage
                 )
             }
         }
@@ -484,11 +486,18 @@ private fun LibraryRecordingRow(
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = formatLibDuration(meeting.durationSeconds),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = formatLibDuration(meeting.durationSeconds),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    WaveformBars(
+                        meetingId = meeting.id,
+                        modifier = Modifier.width(48.dp).height(18.dp)
+                    )
+                }
             }
             Text(
                 text = meeting.status,
@@ -499,6 +508,28 @@ private fun LibraryRecordingRow(
                     "RECORDING" -> Color(0xFFEF4444)
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
+            )
+        }
+    }
+}
+
+@Composable
+private fun WaveformBars(meetingId: Int, modifier: Modifier = Modifier) {
+    val barColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+    androidx.compose.foundation.Canvas(modifier = modifier) {
+        val barCount = 8
+        val barWidth = size.width / (barCount * 2 - 1)
+        val gap = barWidth
+        repeat(barCount) { i ->
+            // Deterministic height from meetingId — looks like a real waveform
+            val seed = (meetingId * 7 + i * 13) % 17
+            val heightFraction = (0.25f + (seed / 17f) * 0.75f)
+            val barH = size.height * heightFraction
+            val x = i * (barWidth + gap)
+            drawRect(
+                color = barColor,
+                topLeft = androidx.compose.ui.geometry.Offset(x, (size.height - barH) / 2f),
+                size = androidx.compose.ui.geometry.Size(barWidth, barH)
             )
         }
     }

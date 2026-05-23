@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
@@ -131,6 +132,59 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun updateTrashAutoPurgeDays(v: Int) { _trashAutoPurgeDays.value = v; sharedPrefs.edit().putInt("trash_auto_purge_days", v).apply() }
     fun updateDefaultRecordingFolderId(v: Int) { _defaultRecordingFolderId.value = v; sharedPrefs.edit().putInt("default_recording_folder_id", v).apply() }
 
+    // Storage breakdown — computed lazily, refreshed on demand
+    private val _storageBreakdown = MutableStateFlow(com.example.ui.screens.StorageBreakdown())
+    val storageBreakdown: StateFlow<com.example.ui.screens.StorageBreakdown> = _storageBreakdown.asStateFlow()
+
+    fun refreshStorageBreakdown() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val allMeetings = db.meetingDao().getAllMeetingsSync()
+            val allFolders = db.folderDao().getAllForTree().first()
+            val folderMap = allFolders.associateBy { it.id }
+
+            var totalBytes = 0L
+            var trashBytes = 0L
+            val byFolderMap = mutableMapOf<Int, Pair<Long, Int>>() // folderId -> (bytes, count)
+            val allSizes = mutableListOf<com.example.ui.screens.MeetingSize>()
+
+            allMeetings.forEach { meeting ->
+                val audioPath = meeting.audioRelativePath ?: meeting.audioPath ?: return@forEach
+                val file = if (audioPath.startsWith("/")) java.io.File(audioPath)
+                           else java.io.File(getApplication<android.app.Application>().getExternalFilesDir(null), audioPath)
+                val bytes = if (file.exists()) file.length() else 0L
+                if (bytes == 0L) return@forEach
+
+                if (meeting.isDeleted) {
+                    trashBytes += bytes
+                } else {
+                    totalBytes += bytes
+                    val fid = meeting.folderId ?: -1
+                    val (prevBytes, prevCount) = byFolderMap[fid] ?: (0L to 0)
+                    byFolderMap[fid] = (prevBytes + bytes) to (prevCount + 1)
+                    allSizes.add(com.example.ui.screens.MeetingSize(meeting.id, meeting.title, bytes, meeting.durationSeconds))
+                }
+            }
+
+            val byFolder = byFolderMap.entries.mapNotNull { (fid, pair) ->
+                val folder = if (fid == -1) null else folderMap[fid]
+                com.example.ui.screens.FolderUsage(
+                    folderId = fid,
+                    folderName = folder?.name ?: "No folder",
+                    colorHex = folder?.colorHex ?: "#6B7280",
+                    bytes = pair.first,
+                    count = pair.second
+                )
+            }.sortedByDescending { it.bytes }
+
+            _storageBreakdown.value = com.example.ui.screens.StorageBreakdown(
+                totalBytes = totalBytes,
+                byFolder = byFolder,
+                trashBytes = trashBytes,
+                biggest = allSizes.sortedByDescending { it.bytes }.take(20)
+            )
+        }
+    }
+
     init {
         val savedKey = sharedPrefs.getString("gemini_api_key", "") ?: ""
         com.example.data.api.GeminiClient.setCustomApiKey(savedKey.ifBlank { null })
@@ -160,6 +214,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+        refreshStorageBreakdown()
     }
 
     fun updateCustomGeminiKey(key: String) {
