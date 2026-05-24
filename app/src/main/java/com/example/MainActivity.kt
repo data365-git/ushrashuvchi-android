@@ -82,44 +82,6 @@ class MainActivity : ComponentActivity() {
               )
             }
 
-            // Legacy list — kept so deep links and processing popUpTo still work
-            composable("meetings_list") {
-              MeetingsListScreen(
-                viewModel = viewModel,
-                onNavigateToRecord = { navController.navigate("record") },
-                onNavigateToDetail = { id -> navController.navigate("meeting_detail/$id") },
-                onNavigateToSettings = { navController.navigate("settings") },
-                onNavigateToLibrary = { navController.navigate("library") },
-                onNavigateToAllTasks = { navController.navigate("all_tasks") }
-              )
-            }
-
-            // Screen 3: Record
-            composable("record") {
-              RecordUploadScreen(
-                viewModel = viewModel,
-                onNavigateToProcessing = { navController.navigate("processing") },
-                onBack = { navController.popBackStack() }
-              )
-            }
-
-            // Screen 4: Processing
-            composable("processing") {
-              ProcessingScreen(
-                viewModel = viewModel,
-                onNavigateToResult = { id ->
-                  navController.navigate("meeting_detail/$id") {
-                    popUpTo("processing") { inclusive = true }
-                  }
-                },
-                onBackToHome = {
-                  navController.navigate("main") {
-                    popUpTo("main") { inclusive = false }
-                  }
-                }
-              )
-            }
-
             // Screen 5-7: Meeting Detail tabs
             composable(
               route = "meeting_detail/{meetingId}",
@@ -164,15 +126,6 @@ class MainActivity : ComponentActivity() {
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
                 onOpenMeeting = { id -> navController.navigate("meeting_detail/$id") }
-              )
-            }
-
-            // Recordings library
-            composable("library") {
-              RecordingsLibraryScreen(
-                viewModel = viewModel,
-                onOpenMeeting = { id -> navController.navigate("meeting_detail/$id") },
-                onStartRecording = { navController.navigate("recorder") }
               )
             }
 

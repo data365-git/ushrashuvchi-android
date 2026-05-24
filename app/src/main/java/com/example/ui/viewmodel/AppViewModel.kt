@@ -194,9 +194,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 repository.seedDefaultFoldersIfEmpty()
             } catch (_: Exception) {}
             try {
-                val demoDismissed = sharedPrefs.getBoolean("demo_dismissed", false)
-                if (!demoDismissed && db.meetingDao().getMeetingsCount() == 0) {
+                val alreadySeeded = sharedPrefs.getBoolean("demo_seeded", false)
+                if (!alreadySeeded) {
                     seedDemoData()
+                    sharedPrefs.edit().putBoolean("demo_seeded", true).apply()
                 }
             } catch (_: Exception) {}
             try {
