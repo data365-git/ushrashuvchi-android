@@ -23,6 +23,7 @@ import com.example.data.model.RecordingSession
 import com.example.data.model.Task
 import com.example.data.model.TranscriptLine
 import com.example.data.repository.MeetingRepository
+import com.example.widget.WidgetStateManager
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
@@ -213,6 +214,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     _amplitudeWaveform.value = current
                 }
             }
+        }
+        // Push widget state whenever meetings list changes (e.g. new meeting added, status updated)
+        viewModelScope.launch {
+            db.meetingDao().getAllMeetings().collect { _ -> pushWidgetState() }
         }
         refreshStorageBreakdown()
     }
@@ -590,6 +595,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             getApplication<Application>().startForegroundService(intent)
             _processingMeetingId.value = meetingId
+            pushWidgetState()
         }
     }
 
@@ -606,6 +612,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             action = RecordingService.ACTION_PAUSE
         }
         getApplication<Application>().startService(intent)
+        pushWidgetState()
     }
 
     fun resumeRecording() {
@@ -626,6 +633,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             action = RecordingService.ACTION_RESUME
         }
         getApplication<Application>().startService(intent)
+        pushWidgetState()
     }
 
     fun finishRecording() {
@@ -644,6 +652,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 triggerProcessingPipeline(meeting.title, meeting.folders, audioPath)
             }
         }
+        pushWidgetState()
     }
 
     fun cancelRecording() {
@@ -658,6 +667,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             recordFile?.delete()
             recordFile = null
             _recordSeconds.value = 0L
+            pushWidgetState()
             return
         }
         // Foreground service path
@@ -665,6 +675,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             action = RecordingService.ACTION_CANCEL
         }
         getApplication<Application>().startService(intent)
+        pushWidgetState()
     }
 
     fun selectFolder(folderId: Int?) {
@@ -814,6 +825,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 while (_isRecording.value) {
                     delay(1000L)
                     _recordSeconds.value += 1
+                    pushWidgetState()
                 }
             }
         } catch (e: Exception) {
@@ -824,6 +836,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 while (_isRecording.value) {
                     delay(1000L)
                     _recordSeconds.value += 1
+                    pushWidgetState()
                 }
             }
         }
@@ -899,6 +912,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun generateAiSummary(meetingId: Int, topic: String, audioPath: String?, folder: String) {
         viewModelScope.launch {
             _aiProcessingMeetingId.value = meetingId
+            pushWidgetState()
             _aiError.value = null
             try {
                 repository.processMeetingWithGemini(
@@ -915,6 +929,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 _aiError.value = e.localizedMessage ?: "Generation failed"
             } finally {
                 _aiProcessingMeetingId.value = null
+                pushWidgetState()
             }
         }
     }
@@ -1122,6 +1137,37 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             adapter.fromJson(jsonString) ?: emptyList()
         } catch (_: Exception) {
             emptyList()
+        }
+    }
+
+    private fun pushWidgetState() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ctx = getApplication<android.app.Application>()
+            val apiKey = _customGeminiKey.value
+            val hasKey = apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY"
+            val lastMeeting = try {
+                db.meetingDao().getAllMeetingsSync()
+                    .filter { !it.isDeleted }
+                    .maxByOrNull { it.id }
+            } catch (_: Exception) { null }
+            val durSecs = lastMeeting?.durationSeconds ?: 0L
+            val durStr = if (durSecs > 0L) {
+                val h = durSecs / 3600; val m = (durSecs % 3600) / 60; val s = durSecs % 60
+                if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
+            } else ""
+            WidgetStateManager.push(
+                context          = ctx,
+                isRecording      = _isRecording.value,
+                isPaused         = _isPaused.value,
+                recordSeconds    = _recordSeconds.value,
+                source           = _meetingAudioSource.value,
+                hasApiKey        = hasKey,
+                lastTitle        = lastMeeting?.title ?: "",
+                lastDuration     = durStr,
+                lastStatus       = lastMeeting?.status ?: "",
+                lastMeetingId    = lastMeeting?.id ?: -1,
+                isProcessing     = _aiProcessingMeetingId.value != null
+            )
         }
     }
 

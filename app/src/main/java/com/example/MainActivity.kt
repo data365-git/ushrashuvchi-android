@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -7,6 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModelProvider
@@ -22,10 +24,17 @@ import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.AppViewModel
 
 class MainActivity : ComponentActivity() {
+
+  private var pendingAction: String? = null
+  private var pendingMeetingId: Int = -1
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
-    
+
+    pendingAction = intent?.action
+    pendingMeetingId = intent?.getIntExtra("meetingId", -1) ?: -1
+
     // Initialize standard ViewModel
     val viewModel = ViewModelProvider(this)[AppViewModel::class.java]
 
@@ -38,6 +47,26 @@ class MainActivity : ComponentActivity() {
           color = MaterialTheme.colorScheme.background
         ) {
           val navController = rememberNavController()
+
+          // Handle widget intent navigation
+          LaunchedEffect(pendingAction) {
+            when (pendingAction) {
+              "com.example.ACTION_QUICK_RECORD" -> {
+                navController.navigate("recorder")
+                pendingAction = null
+              }
+              "com.example.ACTION_OPEN_MEETING" -> {
+                if (pendingMeetingId > 0) {
+                  navController.navigate("meeting_detail/$pendingMeetingId")
+                  pendingAction = null
+                }
+              }
+              "com.example.ACTION_OPEN_SETTINGS" -> {
+                navController.navigate("settings")
+                pendingAction = null
+              }
+            }
+          }
 
           NavHost(
             navController = navController,
@@ -166,6 +195,13 @@ class MainActivity : ComponentActivity() {
         }
       }
     }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    pendingAction = intent.action
+    pendingMeetingId = intent.getIntExtra("meetingId", -1)
+    setIntent(intent)
   }
 }
 
