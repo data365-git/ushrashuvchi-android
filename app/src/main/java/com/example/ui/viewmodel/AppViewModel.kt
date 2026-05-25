@@ -292,10 +292,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             recorderState.collect { state ->
                 if (state is RecorderState.Active) {
+                    // Drop the first 600 ms: mic gain auto-calibrates during onset and
+                    // returns near-max amplitudes that blow out the waveform visually.
+                    if (state.elapsedMs < 600) return@collect
                     val current = _amplitudeWaveform.value.toMutableList()
                     current.add(state.amplitude)
-                    if (current.size > 120) current.removeAt(0)
+                    if (current.size > 48) current.removeAt(0)
                     _amplitudeWaveform.value = current
+                } else if (state is RecorderState.Idle) {
+                    _amplitudeWaveform.value = emptyList()
                 }
             }
         }

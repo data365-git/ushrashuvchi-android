@@ -19,7 +19,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -286,20 +288,11 @@ private fun RecordingPanel(
 
         Spacer(Modifier.height(24.dp))
 
-        Canvas(modifier = Modifier.fillMaxWidth().height(80.dp)) {
-            val count = waveform.size.coerceAtLeast(1)
-            val barWidth = size.width / count.toFloat()
-            val centerY = size.height / 2f
-            waveform.forEachIndexed { i, amplitude ->
-                val h = (amplitude / 32768f).coerceIn(0.05f, 1f) * size.height * 0.9f
-                drawLine(
-                    color = palette.waveformBar,
-                    start = Offset(i * barWidth + barWidth / 2, centerY - h / 2),
-                    end = Offset(i * barWidth + barWidth / 2, centerY + h / 2),
-                    strokeWidth = (barWidth * 0.55f).coerceAtLeast(2f)
-                )
-            }
-        }
+        WaveformBars(
+            samples = waveform,
+            barColor = palette.waveformBar,
+            modifier = Modifier.fillMaxWidth().height(80.dp)
+        )
 
         Spacer(Modifier.height(16.dp))
 
@@ -676,4 +669,43 @@ private fun formatBytes(b: Long): String = when {
     b < 1024 -> "$b B"
     b < 1024 * 1024 -> "${b / 1024} KB"
     else -> "%.1f MB".format(b / 1024.0 / 1024.0)
+}
+
+@Composable
+private fun WaveformBars(
+    samples: List<Int>,
+    barColor: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier
+) {
+    val barCount = 48
+    val barGapDp = 4.dp
+    val barCornerDp = 2.dp
+    val minBarHeightDp = 4.dp
+    val maxBarHeightFrac = 0.85f
+    Canvas(modifier = modifier) {
+        val gapPx = barGapDp.toPx()
+        val cornerPx = barCornerDp.toPx()
+        val minHPx = minBarHeightDp.toPx()
+        val totalGap = gapPx * (barCount - 1)
+        val barWidth = ((size.width - totalGap) / barCount).coerceAtLeast(2.dp.toPx())
+        val centerY = size.height / 2f
+        val maxH = size.height * maxBarHeightFrac
+        val padded: List<Int> = if (samples.size >= barCount) {
+            samples.takeLast(barCount)
+        } else {
+            List(barCount - samples.size) { 0 } + samples
+        }
+        padded.forEachIndexed { i, amplitude ->
+            val n = (amplitude / 32_768f).coerceIn(0f, 1f)
+            val perceptual = kotlin.math.sqrt(n)
+            val barHeight = minHPx + perceptual * (maxH - minHPx)
+            val x = i * (barWidth + gapPx)
+            drawRoundRect(
+                color = barColor,
+                topLeft = Offset(x, centerY - barHeight / 2f),
+                size = Size(barWidth, barHeight),
+                cornerRadius = CornerRadius(cornerPx, cornerPx)
+            )
+        }
+    }
 }

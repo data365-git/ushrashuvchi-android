@@ -42,7 +42,8 @@ class RecordingService : Service() {
         const val EXTRA_MEETING_ID = "extra_meeting_id"
 
         private const val NOTIFICATION_ID = 42
-        private const val CHANNEL_ID = "recording_channel"
+        private const val CHANNEL_ID_LEGACY = "recording_channel"
+        private const val CHANNEL_ID = "recording_channel_v2_silent"
 
         private val _state = MutableStateFlow<RecorderState>(RecorderState.Idle)
         val state: StateFlow<RecorderState> = _state.asStateFlow()
@@ -341,16 +342,30 @@ class RecordingService : Service() {
     }
 
     private fun createNotificationChannel() {
+        val nm = getSystemService(NotificationManager::class.java) ?: return
+        runCatching { nm.deleteNotificationChannel(CHANNEL_ID_LEGACY) }
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Recording",
-            NotificationManager.IMPORTANCE_HIGH
-        )
-        getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+            "Recording in progress",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Shown while a recording is active. Silent."
+            setSound(null, null)
+            enableVibration(false)
+            enableLights(false)
+            setShowBadge(false)
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+        }
+        nm.createNotificationChannel(channel)
     }
 
     private fun buildNotification(isPaused: Boolean = false): android.app.Notification {
         val n = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSilent(true)
+            .setSound(null)
+            .setVibrate(null)
+            .setDefaults(0)
+            .setOnlyAlertOnce(true)
             .setContentTitle(if (isPaused) "Recording paused" else "Recording in progress")
             .setContentText(topic.ifBlank { "Meeting recording" })
             .setSmallIcon(android.R.drawable.presence_audio_online)
