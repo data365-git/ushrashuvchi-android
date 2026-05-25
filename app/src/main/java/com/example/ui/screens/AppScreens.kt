@@ -2248,6 +2248,17 @@ private fun SettingsAccountTab(
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(Modifier.height(4.dp))
+                    val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
+                    Text(
+                        if (pendingSyncCount == 0) "All synced"
+                        else "$pendingSyncCount item${if (pendingSyncCount == 1) "" else "s"} pending sync",
+                        fontSize = 11.sp,
+                        color = if (pendingSyncCount == 0)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }

@@ -1,0 +1,55 @@
+appId: com.aistudio.ushrashuvchi.zkpwxm
+name: Synthetic critical path — meeting record + AI generation
+tags:
+  - synthetic
+  - production-monitor
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      android.permission.RECORD_AUDIO: allow
+      android.permission.POST_NOTIFICATIONS: allow
+
+# Recordings tab should be visible on launch
+- assertVisible: "Recordings"
+
+# Open the recorder
+- tapOn:
+    id: "fab_add_meeting"
+
+# Start recording
+- tapOn: "Start recording"
+
+# Record for ~6 seconds
+- wait:
+    ms: 6500
+
+# Stop
+- tapOn: "Stop"
+
+# Save
+- tapOn: "Save Recording"
+
+# Trigger AI generation
+- tapOn:
+    text: ".*Generate.*"
+    isRegexp: true
+
+# Wait up to 60 s for Summary tab to appear
+- waitUntilVisible:
+    text: ".*Summary.*"
+    isRegexp: true
+    timeout: 60000
+
+- assertVisible:
+    text: ".*Summary.*"
+    isRegexp: true
+
+# Cleanup: long-press the new recording and delete it
+- longPressOn:
+    text: ".*synthetic.*"
+    isRegexp: true
+
+- tapOn: "Delete"
+- tapOn: "Confirm"

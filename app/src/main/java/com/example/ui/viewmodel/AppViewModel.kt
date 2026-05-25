@@ -24,6 +24,8 @@ import com.example.data.model.RecordingSession
 import com.example.data.model.Task
 import com.example.data.model.TranscriptLine
 import com.example.data.repository.MeetingRepository
+import com.example.data.sync.SyncManager
+import com.example.data.sync.SyncPrefs
 import com.example.widget.WidgetStateManager
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -1148,6 +1150,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _aiError = MutableStateFlow<String?>(null)
     val aiError: StateFlow<String?> = _aiError.asStateFlow()
 
+    val pendingSyncCount: StateFlow<Int> = db.syncQueueDao()
+        .pendingCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     private val _aiProcessingStartedAt = MutableStateFlow<Long?>(null)
     val aiProcessingStartedAt: StateFlow<Long?> = _aiProcessingStartedAt.asStateFlow()
 
@@ -1186,6 +1192,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     llmModel = _llmModel.value,
                     transcriptionSystemPrompt = _transcriptionPrompt.value
                 )
+                // Auto-sync: enqueue the completed meeting for cloud upload if sync is enabled
+                val syncMgr = SyncManager(getApplication())
+                if (SyncPrefs(getApplication()).cloudSyncEnabled) {
+                    syncMgr.enqueueFullMeeting(meetingId, includeAudio = false)
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // User-initiated cancel — restore status to RECORDED so the Generate
                 // card reappears. Re-throw per coroutine convention.
