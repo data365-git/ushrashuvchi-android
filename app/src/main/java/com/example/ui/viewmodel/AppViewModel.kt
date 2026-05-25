@@ -19,6 +19,7 @@ import com.example.data.model.ChatMessage
 import com.example.data.model.Folder
 import com.example.data.model.Meeting
 import com.example.data.model.MeetingChapter
+import com.example.data.model.MeetingStatus
 import com.example.data.model.RecordingSession
 import com.example.data.model.Task
 import com.example.data.model.TranscriptLine
@@ -30,30 +31,43 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.UUID
 
+enum class LibrarySort { LAST_MODIFIED, NAME_ASC, NAME_DESC, OLDEST }
+
 class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
-        private const val DEFAULT_STT_MODEL = "gemini-2.0-flash"
-        private const val DEFAULT_LLM_MODEL = "gemini-2.0-flash"
+        private const val DEFAULT_STT_MODEL = "gemini-2.5-flash"
+        private const val DEFAULT_LLM_MODEL = "gemini-2.5-flash"
         private const val DEFAULT_TRANSCRIPTION_PROMPT =
             "You are an expert meeting transcriber. Listen to the attached audio (or use the provided topic if no audio), " +
             "produce an accurate transcript with speaker labels, then structure the meeting (summary, chapters, tasks, " +
             "refined topics) in the requested language."
         private const val DEFAULT_CHAT_PROMPT =
             "You are a helpful meeting summary assistant. Answer strictly from the transcript. Be concise."
+        const val DEFAULT_SUMMARY_PROMPT =
+            "Summarize this meeting in clear markdown with key takeaways."
+        const val DEFAULT_REFINED_PROMPT =
+            "Group the transcript into logical topics with key points and speaker quotes."
+        const val DEFAULT_TASKS_PROMPT =
+            "Extract action items as a JSON array with fields: title, assignee."
     }
 
     private val db = AppDatabase.getDatabase(application)
@@ -63,7 +77,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         meetingDao = db.meetingDao(),
         folderDao = db.folderDao(),
         recordingSessionDao = db.recordingSessionDao(),
-        fileManager = fileManager
+        fileManager = fileManager,
+        aiCallLogDao = db.aiCallLogDao(),
+        db = db
     )
     private val sharedPrefs = application.getSharedPreferences("ushrashuvchi_prefs", Context.MODE_PRIVATE)
 
@@ -81,6 +97,33 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _chatPrompt = MutableStateFlow(sharedPrefs.getString("gemini_chat_prompt", DEFAULT_CHAT_PROMPT) ?: DEFAULT_CHAT_PROMPT)
     val chatPrompt: StateFlow<String> = _chatPrompt.asStateFlow()
+
+    private val _summaryPrompt = MutableStateFlow(
+        sharedPrefs.getString("gemini_summary_prompt", DEFAULT_SUMMARY_PROMPT) ?: DEFAULT_SUMMARY_PROMPT
+    )
+    val summaryPrompt: StateFlow<String> = _summaryPrompt.asStateFlow()
+    fun updateSummaryPrompt(v: String) {
+        _summaryPrompt.value = v
+        sharedPrefs.edit().putString("gemini_summary_prompt", v).apply()
+    }
+
+    private val _refinedPrompt = MutableStateFlow(
+        sharedPrefs.getString("gemini_refined_prompt", DEFAULT_REFINED_PROMPT) ?: DEFAULT_REFINED_PROMPT
+    )
+    val refinedPrompt: StateFlow<String> = _refinedPrompt.asStateFlow()
+    fun updateRefinedPrompt(v: String) {
+        _refinedPrompt.value = v
+        sharedPrefs.edit().putString("gemini_refined_prompt", v).apply()
+    }
+
+    private val _tasksPrompt = MutableStateFlow(
+        sharedPrefs.getString("gemini_tasks_prompt", DEFAULT_TASKS_PROMPT) ?: DEFAULT_TASKS_PROMPT
+    )
+    val tasksPrompt: StateFlow<String> = _tasksPrompt.asStateFlow()
+    fun updateTasksPrompt(v: String) {
+        _tasksPrompt.value = v
+        sharedPrefs.edit().putString("gemini_tasks_prompt", v).apply()
+    }
 
     // --- Recorder state from service ---
     val recorderState: StateFlow<RecorderState> = RecordingService.state
@@ -115,8 +158,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _recordingQuality = MutableStateFlow(sharedPrefs.getString("recording_quality", "STANDARD") ?: "STANDARD")
     val recordingQuality: StateFlow<String> = _recordingQuality.asStateFlow()
 
-    private val _audioSource = MutableStateFlow(sharedPrefs.getString("recording_audio_source", "AUTO") ?: "AUTO")
-    val audioSource: StateFlow<String> = _audioSource.asStateFlow()
+    private val _micCaptureSource = MutableStateFlow(sharedPrefs.getString("recording_audio_source", "AUTO") ?: "AUTO")
+    val micCaptureSource: StateFlow<String> = _micCaptureSource.asStateFlow()
 
     private val _keepScreenOn = MutableStateFlow(sharedPrefs.getBoolean("recording_keep_screen_on", true))
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
@@ -128,7 +171,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val defaultRecordingFolderId: StateFlow<Int> = _defaultRecordingFolderId.asStateFlow()
 
     fun updateRecordingQuality(v: String) { _recordingQuality.value = v; sharedPrefs.edit().putString("recording_quality", v).apply() }
-    fun updateAudioSource(v: String) { _audioSource.value = v; sharedPrefs.edit().putString("recording_audio_source", v).apply() }
+    fun updateMicCaptureSource(v: String) { _micCaptureSource.value = v; sharedPrefs.edit().putString("recording_audio_source", v).apply() }
     fun updateKeepScreenOn(v: Boolean) { _keepScreenOn.value = v; sharedPrefs.edit().putBoolean("recording_keep_screen_on", v).apply() }
     fun updateTrashAutoPurgeDays(v: Int) { _trashAutoPurgeDays.value = v; sharedPrefs.edit().putInt("trash_auto_purge_days", v).apply() }
     fun updateDefaultRecordingFolderId(v: Int) { _defaultRecordingFolderId.value = v; sharedPrefs.edit().putInt("default_recording_folder_id", v).apply() }
@@ -187,6 +230,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
+        // Migrate stale default model prefs to gemini-2.5-flash
+        val savedStt = sharedPrefs.getString("gemini_stt_model", null)
+        if (savedStt != null && (savedStt.startsWith("gemini-1.5") || savedStt == "gemini-2.0-flash")) {
+            sharedPrefs.edit().putString("gemini_stt_model", DEFAULT_STT_MODEL).apply()
+            _sttModel.value = DEFAULT_STT_MODEL
+        }
+        val savedLlm = sharedPrefs.getString("gemini_llm_model", null)
+        if (savedLlm != null && (savedLlm.startsWith("gemini-1.5") || savedLlm == "gemini-2.0-flash")) {
+            sharedPrefs.edit().putString("gemini_llm_model", DEFAULT_LLM_MODEL).apply()
+            _llmModel.value = DEFAULT_LLM_MODEL
+        }
+        // Migrate old boolean isDarkTheme pref
+        if (sharedPrefs.contains("is_dark_theme") && !sharedPrefs.contains("theme_mode")) {
+            val oldDark = sharedPrefs.getBoolean("is_dark_theme", false)
+            setThemeMode(if (oldDark) com.example.ui.theme.ThemeMode.DARK else com.example.ui.theme.ThemeMode.LIGHT)
+            sharedPrefs.edit().remove("is_dark_theme").apply()
+        }
         val savedKey = sharedPrefs.getString("gemini_api_key", "") ?: ""
         com.example.data.api.GeminiClient.setCustomApiKey(savedKey.ifBlank { null })
         viewModelScope.launch {
@@ -204,6 +264,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val checkpoint = recoveryStore.load()
                 if (checkpoint != null) _unrecoveredCheckpoint.value = checkpoint
             } catch (_: Exception) {}
+            // Partial Gap 1: orphan sweep. Generation currently runs on viewModelScope,
+            // so any meeting still in PROCESSING after the process died is by definition
+            // stuck. Mark them FAILED with a clear "Interrupted" reason so the UI shows
+            // Retry instead of a permanent spinner. Full fix is to move generation to
+            // WorkManager — until then this prevents the worst stuck-state UX.
+            try {
+                val orphans = db.meetingDao().getAllMeetingsSync()
+                    .filter { it.status == com.example.data.model.MeetingStatus.PROCESSING }
+                orphans.forEach { m ->
+                    db.meetingDao().updateMeeting(m.copy(
+                        status = com.example.data.model.MeetingStatus.FAILED,
+                        generationError = "Generation was interrupted (app closed or device restarted). Tap Retry."
+                    ))
+                }
+                if (orphans.isNotEmpty()) {
+                    android.util.Log.w("AppViewModel",
+                        "Orphan sweep: marked ${orphans.size} stuck PROCESSING meeting(s) as FAILED")
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("AppViewModel", "Orphan sweep failed", e)
+            }
         }
         // Collect recorder state for waveform
         viewModelScope.launch {
@@ -221,6 +302,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             db.meetingDao().getAllMeetings().collect { _ -> pushWidgetState() }
         }
         refreshStorageBreakdown()
+        // Schedule trash auto-purge
+        val workManager = androidx.work.WorkManager.getInstance(application)
+        workManager.enqueueUniquePeriodicWork(
+            "trash_auto_purge",
+            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            androidx.work.PeriodicWorkRequestBuilder<com.example.audio.TrashAutoPurgeWorker>(
+                24, java.util.concurrent.TimeUnit.HOURS
+            ).build()
+        )
+        workManager.enqueue(
+            androidx.work.OneTimeWorkRequestBuilder<com.example.audio.TrashAutoPurgeWorker>().build()
+        )
     }
 
     fun updateCustomGeminiKey(key: String) {
@@ -294,7 +387,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             com.example.data.model.Meeting(
                 title = "Landing Page Redesign Feedback",
                 folders = "Team Sync",
-                status = "COMPLETED",
+                status = MeetingStatus.COMPLETED,
                 isStarred = true,
                 isDemo = true,
                 durationSeconds = 65,
@@ -359,7 +452,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             com.example.data.model.Meeting(
                 title = "Loyihani yakunlash masalalari",
                 folders = "Client Call",
-                status = "COMPLETED",
+                status = MeetingStatus.COMPLETED,
                 isStarred = false,
                 isDemo = true,
                 durationSeconds = 45,
@@ -418,7 +511,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             com.example.data.model.Meeting(
                 title = "Weekly Product Alignment Sync",
                 folders = "1:1",
-                status = "COMPLETED",
+                status = MeetingStatus.COMPLETED,
                 isStarred = false,
                 isDemo = true,
                 durationSeconds = 30,
@@ -452,11 +545,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // Auth flow removed. App is local-only.
 
     // --- Theme Preference ---
-    private val _isDarkTheme = MutableStateFlow(true) // Defaults to beautiful modern Dark theme!
-    val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
+    private val _themeMode = MutableStateFlow(
+        sharedPrefs.getString("theme_mode", com.example.ui.theme.ThemeMode.LIGHT.name)
+            ?.let { runCatching { com.example.ui.theme.ThemeMode.valueOf(it) }.getOrNull() }
+            ?: com.example.ui.theme.ThemeMode.LIGHT
+    )
+    val themeMode: StateFlow<com.example.ui.theme.ThemeMode> = _themeMode.asStateFlow()
+
+    // Keep isDarkTheme for any existing code that still reads it directly
+    val isDarkTheme: StateFlow<Boolean> = _themeMode.map {
+        it == com.example.ui.theme.ThemeMode.DARK
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun setThemeMode(mode: com.example.ui.theme.ThemeMode) {
+        _themeMode.value = mode
+        sharedPrefs.edit().putString("theme_mode", mode.name).apply()
+    }
 
     fun toggleTheme() {
-        _isDarkTheme.value = !_isDarkTheme.value
+        val next = when (_themeMode.value) {
+            com.example.ui.theme.ThemeMode.LIGHT -> com.example.ui.theme.ThemeMode.DARK
+            com.example.ui.theme.ThemeMode.DARK  -> com.example.ui.theme.ThemeMode.LIGHT
+            com.example.ui.theme.ThemeMode.SYSTEM -> com.example.ui.theme.ThemeMode.LIGHT
+        }
+        setThemeMode(next)
     }
 
     // --- Search & Filter State ---
@@ -475,8 +587,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Flow representing final filtered meetings — folderId + audioSource + search
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
     val filteredMeetings: StateFlow<List<Meeting>> = combine(
-        _searchText.flatMapLatest { q ->
+        _searchText.debounce(250).flatMapLatest { q ->
             if (q.isBlank()) repository.allMeetings else repository.searchMeetings(q)
         },
         _selectedFolderId,
@@ -499,8 +612,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateTask(id: Int, title: String, assignee: String, dueAt: Long?, notes: String) {
+        val sanitizedDue = dueAt?.takeIf {
+            it in 0..(System.currentTimeMillis() + 10L * 365 * 24 * 3600 * 1000)
+        }
         viewModelScope.launch {
-            repository.updateTaskFields(id, title, assignee, dueAt, notes)
+            repository.updateTaskFields(id, title, assignee, sanitizedDue, notes)
         }
     }
 
@@ -561,42 +677,50 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- New foreground-service recorder commands ---
 
+    private val _recordingStartInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun beginRecording(topic: String, folderId: Int) {
+        if (!_recordingStartInFlight.compareAndSet(false, true)) return
         viewModelScope.launch {
-            val folder = db.folderDao().getById(folderId)
-            val slug = folder?.slug ?: "_inbox"
-            val now = System.currentTimeMillis()
-            val outputFile = fileManager.newRecordingFile(slug, topic, now)
-            val sessionId = UUID.randomUUID().toString()
+            try {
+                val folder = db.folderDao().getById(folderId)
+                val slug = folder?.slug ?: "_inbox"
+                val now = System.currentTimeMillis()
+                val outputFile = fileManager.newRecordingFile(slug, topic, now)
+                val sessionId = UUID.randomUUID().toString()
 
-            val newMeeting = Meeting(
-                title = topic,
-                status = "RECORDING",
-                folders = folder?.name ?: "Inbox",
-                folderId = folderId
-            )
-            val meetingId = repository.insertMeeting(newMeeting).toInt()
+                val newMeeting = Meeting(
+                    title = topic,
+                    status = MeetingStatus.RECORDING,
+                    folders = folder?.name ?: "Inbox",
+                    folderId = folderId,
+                    audioSource = _meetingAudioSource.value
+                )
+                val meetingId = repository.insertMeeting(newMeeting).toInt()
 
-            val session = RecordingSession(
-                id = sessionId,
-                meetingId = meetingId,
-                folderId = folderId,
-                relativePath = "${slug}/${outputFile.name}",
-                state = "RECORDING"
-            )
-            db.recordingSessionDao().insert(session)
+                val session = RecordingSession(
+                    id = sessionId,
+                    meetingId = meetingId,
+                    folderId = folderId,
+                    relativePath = "${slug}/${outputFile.name}",
+                    state = "RECORDING"
+                )
+                db.recordingSessionDao().insert(session)
 
-            val intent = Intent(getApplication(), RecordingService::class.java).apply {
-                action = RecordingService.ACTION_START
-                putExtra(RecordingService.EXTRA_SESSION_ID, sessionId)
-                putExtra(RecordingService.EXTRA_OUTPUT_PATH, outputFile.absolutePath)
-                putExtra(RecordingService.EXTRA_TOPIC, topic)
-                putExtra(RecordingService.EXTRA_FOLDER_SLUG, slug)
-                putExtra(RecordingService.EXTRA_MEETING_ID, meetingId)
+                val intent = Intent(getApplication(), RecordingService::class.java).apply {
+                    action = RecordingService.ACTION_START
+                    putExtra(RecordingService.EXTRA_SESSION_ID, sessionId)
+                    putExtra(RecordingService.EXTRA_OUTPUT_PATH, outputFile.absolutePath)
+                    putExtra(RecordingService.EXTRA_TOPIC, topic)
+                    putExtra(RecordingService.EXTRA_FOLDER_SLUG, slug)
+                    putExtra(RecordingService.EXTRA_MEETING_ID, meetingId)
+                }
+                getApplication<Application>().startForegroundService(intent)
+                _processingMeetingId.value = meetingId
+                pushWidgetState()
+            } finally {
+                _recordingStartInFlight.set(false)
             }
-            getApplication<Application>().startForegroundService(intent)
-            _processingMeetingId.value = meetingId
-            pushWidgetState()
         }
     }
 
@@ -638,21 +762,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun finishRecording() {
-        val meetingId = _processingMeetingId.value
         val intent = Intent(getApplication(), RecordingService::class.java).apply {
             action = RecordingService.ACTION_STOP
         }
         getApplication<Application>().startService(intent)
-        if (meetingId != null) {
-            viewModelScope.launch {
-                val meeting = db.meetingDao().getMeetingByIdSync(meetingId) ?: return@launch
-                val session = db.recordingSessionDao().getByMeetingId(meetingId)
-                val audioPath = if (session != null) {
-                    fileManager.root.absolutePath + "/" + session.relativePath
-                } else meeting.audioPath
-                triggerProcessingPipeline(meeting.title, meeting.folders, audioPath)
-            }
-        }
         pushWidgetState()
     }
 
@@ -672,21 +785,89 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         // Foreground service path
+        val meetingId = _processingMeetingId.value
         val intent = Intent(getApplication(), RecordingService::class.java).apply {
             action = RecordingService.ACTION_CANCEL
         }
         getApplication<Application>().startService(intent)
+        if (meetingId != null) {
+            viewModelScope.launch {
+                db.meetingDao().deleteMeetingById(meetingId)
+            }
+        }
+        _processingMeetingId.value = null
         pushWidgetState()
     }
+
+    fun applyRecordingMetadata(
+        meetingId: Int,
+        title: String,
+        audioSource: String,
+        folderId: Int,
+        audioPath: String,
+        durationMs: Long
+    ) {
+        viewModelScope.launch {
+            val folder = db.folderDao().getById(folderId)
+            val existing = db.meetingDao().getMeetingByIdSync(meetingId) ?: return@launch
+            db.meetingDao().updateMeeting(
+                existing.copy(
+                    title = title.ifBlank { existing.title },
+                    status = MeetingStatus.RECORDED,
+                    folders = folder?.name ?: existing.folders,
+                    folderId = folderId,
+                    audioSource = audioSource,
+                    audioPath = audioPath,
+                    durationSeconds = durationMs / 1000
+                )
+            )
+            _processingMeetingId.value = null
+            RecordingService.resetToIdle()
+        }
+    }
+
+    fun discardSavedRecording() {
+        val state = RecordingService.state.value as? com.example.audio.RecorderState.Saved
+        val meetingId = _processingMeetingId.value
+        viewModelScope.launch {
+            if (state != null) {
+                try { java.io.File(state.outputAbsolutePath).delete() } catch (_: Exception) {}
+            }
+            if (meetingId != null) {
+                db.meetingDao().deleteMeetingById(meetingId)
+            }
+            RecordingService.resetToIdle()
+            _processingMeetingId.value = null
+        }
+    }
+
+    fun folderBreadcrumb(folderId: Int): kotlinx.coroutines.flow.Flow<List<com.example.data.model.Folder>> =
+        kotlinx.coroutines.flow.flow {
+            val chain = mutableListOf<com.example.data.model.Folder>()
+            var current = db.folderDao().getById(folderId)
+            while (current != null) {
+                chain.add(0, current)
+                current = current.parentId?.let { db.folderDao().getById(it) }
+            }
+            emit(chain)
+        }.flowOn(kotlinx.coroutines.Dispatchers.IO)
 
     fun selectFolder(folderId: Int?) {
         _selectedFolderId.value = folderId
     }
 
     fun createFolder(name: String, colorHex: String, parentId: Int? = null, iconKey: String = "folder") {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty() || trimmed.length > 60) return
         viewModelScope.launch {
-            val slug = name.lowercase().replace("[^a-z0-9]+".toRegex(), "-").trim('-')
-            db.folderDao().insert(Folder(name = name, slug = slug, colorHex = colorHex, parentId = parentId, iconKey = iconKey))
+            val base = trimmed.lowercase().replace("[^a-z0-9]+".toRegex(), "-").trim('-').ifBlank { "folder" }
+            var slug = base
+            var suffix = 0
+            while (db.folderDao().getBySlug(slug) != null) {
+                suffix++
+                slug = "$base-$suffix"
+            }
+            db.folderDao().insert(Folder(name = trimmed, slug = slug, colorHex = colorHex, parentId = parentId, iconKey = iconKey))
         }
     }
 
@@ -743,9 +924,66 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.restoreMeeting(id) }
     }
 
+    // Snackbar events — app-scope, observed by MainScaffold's snackbar host
+    data class SnackbarEvent(
+        val message: String,
+        val actionLabel: String? = null,
+        val onAction: (() -> Unit)? = null
+    )
+
+    private val _snackbarEvents = MutableSharedFlow<SnackbarEvent>(extraBufferCapacity = 1)
+    val snackbarEvents: SharedFlow<SnackbarEvent> = _snackbarEvents
+
+    fun emitSnackbar(event: SnackbarEvent) {
+        viewModelScope.launch { _snackbarEvents.emit(event) }
+    }
+
+    /**
+     * Commit soft-delete IMMEDIATELY + emit a snackbar with Undo.
+     * If Undo is tapped, the meeting is restored.
+     * If navigation happens or snackbar times out, the delete is permanent (until trash purge).
+     */
+    fun softDeleteWithUndo(meetingId: Int) {
+        viewModelScope.launch {
+            repository.softDeleteMeeting(meetingId)
+            _snackbarEvents.emit(SnackbarEvent(
+                message = "Recording moved to trash",
+                actionLabel = "Undo",
+                onAction = {
+                    viewModelScope.launch {
+                        repository.restoreMeeting(meetingId)
+                    }
+                }
+            ))
+        }
+    }
+
+    /** Same for bulk delete from multi-select */
+    fun bulkSoftDeleteWithUndo(meetingIds: List<Int>) {
+        if (meetingIds.isEmpty()) return
+        viewModelScope.launch {
+            meetingIds.forEach { repository.softDeleteMeeting(it) }
+            _snackbarEvents.emit(SnackbarEvent(
+                message = "${meetingIds.size} recording(s) moved to trash",
+                actionLabel = "Undo",
+                onAction = {
+                    viewModelScope.launch {
+                        meetingIds.forEach { repository.restoreMeeting(it) }
+                    }
+                }
+            ))
+        }
+    }
+
     fun emptyTrash() {
         viewModelScope.launch { repository.purgeTrashOlderThan(0) }
     }
+
+    private val _emptyTrashConfirmRequested = MutableStateFlow(false)
+    val emptyTrashConfirmRequested: StateFlow<Boolean> = _emptyTrashConfirmRequested.asStateFlow()
+
+    fun requestEmptyTrashConfirmation() { _emptyTrashConfirmRequested.value = true }
+    fun cancelEmptyTrashConfirmation() { _emptyTrashConfirmRequested.value = false }
 
     fun rescanRecordings() {
         viewModelScope.launch(Dispatchers.IO) {
@@ -879,7 +1117,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val newMeeting = Meeting(
                 title = topic.ifBlank { "Untitled meeting" },
-                status = "RECORDED",
+                status = MeetingStatus.RECORDED,
                 folders = folder,
                 audioPath = audioPath,
                 durationSeconds = audioPath?.let { probeDurationSeconds(it) } ?: 0L
@@ -910,9 +1148,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _aiError = MutableStateFlow<String?>(null)
     val aiError: StateFlow<String?> = _aiError.asStateFlow()
 
+    private val _aiProcessingStartedAt = MutableStateFlow<Long?>(null)
+    val aiProcessingStartedAt: StateFlow<Long?> = _aiProcessingStartedAt.asStateFlow()
+
+    private val _aiProcessingEstimateMs = MutableStateFlow<Long?>(null)
+    val aiProcessingEstimateMs: StateFlow<Long?> = _aiProcessingEstimateMs.asStateFlow()
+
+    // Gap 7: tracked Job so the user can cancel a long-running generation.
+    private var generationJob: kotlinx.coroutines.Job? = null
+
     fun generateAiSummary(meetingId: Int, topic: String, audioPath: String?, folder: String) {
-        viewModelScope.launch {
+        // Double-tap guard: if the same meeting is already generating, ignore.
+        if (_aiProcessingMeetingId.value == meetingId) return
+        // Cancel any prior generation before kicking off a new one — otherwise two
+        // launches would race for _aiProcessingMeetingId and only the later finally
+        // block would clear it, leaving the UI stuck.
+        generationJob?.cancel()
+        generationJob = viewModelScope.launch {
             _aiProcessingMeetingId.value = meetingId
+            _aiProcessingStartedAt.value = System.currentTimeMillis()
+            val durationMs = audioPath?.let {
+                try { probeDurationSeconds(it) * 1000L } catch (_: Exception) { 0L }
+            } ?: 0L
+            _aiProcessingEstimateMs.value = if (durationMs > 0) {
+                (durationMs / 3L + 10_000L).coerceIn(15_000L, 180_000L)
+            } else 30_000L
             pushWidgetState()
             _aiError.value = null
             try {
@@ -926,16 +1186,85 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     llmModel = _llmModel.value,
                     transcriptionSystemPrompt = _transcriptionPrompt.value
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // User-initiated cancel — restore status to RECORDED so the Generate
+                // card reappears. Re-throw per coroutine convention.
+                try {
+                    val m = db.meetingDao().getMeetingByIdSync(meetingId)
+                    if (m != null && m.status == com.example.data.model.MeetingStatus.PROCESSING) {
+                        db.meetingDao().updateMeeting(m.copy(
+                            status = com.example.data.model.MeetingStatus.RECORDED,
+                            generationError = null
+                        ))
+                    }
+                } catch (_: Exception) {}
+                throw e
             } catch (e: Exception) {
                 _aiError.value = e.localizedMessage ?: "Generation failed"
             } finally {
                 _aiProcessingMeetingId.value = null
+                _aiProcessingStartedAt.value = null
+                _aiProcessingEstimateMs.value = null
                 pushWidgetState()
             }
         }
     }
 
+    /** Gap 7: cancel the in-flight generation, restore RECORDED so user can retry. */
+    fun cancelGeneration() {
+        generationJob?.cancel()
+        generationJob = null
+        _aiProcessingMeetingId.value = null
+        _aiError.value = null
+    }
+
     fun clearAiError() { _aiError.value = null }
+
+    fun editTranscriptLine(line: TranscriptLine, newSpeaker: String, newText: String, renameAll: Boolean) {
+        viewModelScope.launch {
+            val trimmedSpeaker = newSpeaker.trim()
+            val updated = line.copy(speaker = trimmedSpeaker, text = newText.trim())
+            db.meetingDao().updateTranscriptLine(updated)
+            if (renameAll && trimmedSpeaker != line.speaker) {
+                db.meetingDao().renameTranscriptSpeaker(line.meetingId, line.speaker, trimmedSpeaker)
+                // Also rewrite refined JSON's speakerContext entries.
+                try {
+                    val meeting = db.meetingDao().getMeetingByIdSync(line.meetingId)
+                    val refinedJson = meeting?.refinedTranscriptJson
+                    if (meeting != null && !refinedJson.isNullOrBlank()) {
+                        val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+                        val listType = com.squareup.moshi.Types.newParameterizedType(
+                            List::class.java, com.example.data.model.RefinedTranscriptTopic::class.java
+                        )
+                        val adapter = moshi.adapter<List<com.example.data.model.RefinedTranscriptTopic>>(listType)
+                        val topics = adapter.fromJson(refinedJson)
+                        if (topics != null) {
+                            val rewritten = topics.map { topic ->
+                                val ctx = topic.speakerContext
+                                if (ctx.isNullOrEmpty()) topic
+                                else topic.copy(
+                                    speakerContext = ctx.map { item ->
+                                        if (item.speaker == line.speaker) item.copy(speaker = trimmedSpeaker) else item
+                                    }
+                                )
+                            }
+                            db.meetingDao().updateMeeting(
+                                meeting.copy(refinedTranscriptJson = adapter.toJson(rewritten))
+                            )
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun deleteTranscriptLine(lineId: Int) {
+        viewModelScope.launch {
+            try {
+                db.meetingDao().deleteTranscriptLineById(lineId)
+            } catch (_: Exception) {}
+        }
+    }
 
     // --- Audio Playback and Transcript Karaoke ---
     private var mediaPlayer: MediaPlayer? = null
@@ -947,6 +1276,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _durationMs = MutableStateFlow(0L)
     val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
+
+    private val _currentPlayingMeeting = MutableStateFlow<Meeting?>(null)
+    val currentPlayingMeeting: StateFlow<Meeting?> = _currentPlayingMeeting.asStateFlow()
+
+    fun playAudio(meeting: Meeting) {
+        _currentPlayingMeeting.value = meeting
+        val audioPath = meeting.audioPath ?: return
+        playAudio(audioPath)
+    }
+
+    fun stopAndClearPlayback() {
+        pauseAudio()
+        _currentPlayingMeeting.value = null
+    }
 
     private var currentPlayerPath: String? = null
     private var playbackJob: Job? = null
@@ -1032,13 +1375,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Meeting Custom Tasks additions ---
     fun addCustomTask(meetingId: Int, title: String, assignee: String) {
-        if (title.isBlank()) return
+        val trimmedTitle = title.trim()
+        if (trimmedTitle.isBlank()) return
+        val trimmedAssignee = assignee.trim()
         viewModelScope.launch {
             repository.insertTask(
                 Task(
                     meetingId = meetingId,
-                    title = title,
-                    assignee = if (assignee.isBlank()) "Unassigned" else assignee,
+                    title = trimmedTitle,
+                    assignee = if (trimmedAssignee.isBlank()) "Unassigned" else trimmedAssignee,
                     isCompleted = false
                 )
             )
@@ -1060,7 +1405,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // --- Star/Unstar toggles ---
     fun toggleMeetingStarred(meeting: Meeting) {
         viewModelScope.launch {
-            repository.updateMeeting(meeting.copy(isStarred = !meeting.isStarred))
+            db.meetingDao().setStarred(meeting.id, !meeting.isStarred)
         }
     }
 
@@ -1089,23 +1434,98 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
             _isChatLoading.value = true
 
-            // 2. Query Gemini
-            val response = repository.askAiAboutTranscript(
-                meetingId, question, transcript,
-                llmModel = _llmModel.value,
-                chatSystemPrompt = _chatPrompt.value
-            )
+            try {
+                // 2. Query Gemini
+                val response = repository.askAiAboutTranscript(
+                    meetingId, question, transcript,
+                    llmModel = _llmModel.value,
+                    chatSystemPrompt = _chatPrompt.value
+                )
 
-            // 3. Insert AI response
-            repository.insertChatMessage(
-                ChatMessage(meetingId = meetingId, isUser = false, text = response)
-            )
-            _isChatLoading.value = false
+                // 3. Insert AI response
+                repository.insertChatMessage(
+                    ChatMessage(meetingId = meetingId, isUser = false, text = response)
+                )
+            } catch (e: Exception) {
+                repository.insertChatMessage(
+                    ChatMessage(
+                        meetingId = meetingId, isUser = false,
+                        text = "⚠ Failed: ${e.localizedMessage ?: e.message ?: "Unknown error"}"
+                    )
+                )
+            } finally {
+                _isChatLoading.value = false
+            }
         }
     }
 
     fun clearChatForMeeting(meetingId: Int) {
         viewModelScope.launch { repository.clearChatForMeeting(meetingId) }
+    }
+
+    // --- Smart Ask AI (Wave 10): global FTS-backed Q&A across all meetings ---
+    suspend fun askGlobal(query: String): com.example.data.repository.GlobalAskResponse {
+        return repository.askGlobal(query, _llmModel.value)
+    }
+
+    // --- Clear chat confirmation flow ---
+    private val _clearChatConfirmFor = MutableStateFlow<Int?>(null)
+    val clearChatConfirmFor: StateFlow<Int?> = _clearChatConfirmFor.asStateFlow()
+
+    fun requestClearChatConfirmation(meetingId: Int) { _clearChatConfirmFor.value = meetingId }
+    fun cancelClearChatConfirmation() { _clearChatConfirmFor.value = null }
+    fun confirmClearChat() {
+        val id = _clearChatConfirmFor.value ?: return
+        clearChatForMeeting(id)
+        _clearChatConfirmFor.value = null
+    }
+
+    // --- AI error manual dismiss ---
+    fun dismissAiError() { _aiError.value = null }
+
+    // --- Cost tracking ---
+    fun meetingCostBreakdown(meetingId: Int): kotlinx.coroutines.flow.Flow<List<com.example.data.model.AiCallLog>> =
+        db.aiCallLogDao().getByMeeting(meetingId)
+
+    private val _exchangeRateUzs = MutableStateFlow(
+        sharedPrefs.getFloat("usd_to_uzs_rate", 12600f).toDouble()
+    )
+    val exchangeRateUzs: StateFlow<Double> = _exchangeRateUzs.asStateFlow()
+
+    fun updateExchangeRate(v: Double) {
+        _exchangeRateUzs.value = v
+        sharedPrefs.edit().putFloat("usd_to_uzs_rate", v.toFloat()).apply()
+    }
+
+    fun costToday(): kotlinx.coroutines.flow.Flow<Long> {
+        val start = startOfDayMs()
+        return db.aiCallLogDao().sumCostSince(start)
+    }
+
+    fun costThisMonth(): kotlinx.coroutines.flow.Flow<Long> {
+        val start = startOfMonthMs()
+        return db.aiCallLogDao().sumCostSince(start)
+    }
+
+    fun costAllTime(): kotlinx.coroutines.flow.Flow<Long> = db.aiCallLogDao().sumCostAllTime()
+
+    private fun startOfDayMs(): Long {
+        val cal = java.util.Calendar.getInstance()
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
+
+    private fun startOfMonthMs(): Long {
+        val cal = java.util.Calendar.getInstance()
+        cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
     }
 
     // Parse Chapters helper
@@ -1141,6 +1561,186 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ── AI observability ──────────────────────────────────────────────────
+
+    enum class AiHealthStatus { UNKNOWN, OK, QUOTA, BAD_KEY, ERROR }
+
+    private val _aiHealthStatus = MutableStateFlow(AiHealthStatus.UNKNOWN)
+    val aiHealthStatus: StateFlow<AiHealthStatus> = _aiHealthStatus.asStateFlow()
+
+    private val _lastAiError = MutableStateFlow<com.example.data.api.GeminiResult.Error?>(null)
+    val lastAiError: StateFlow<com.example.data.api.GeminiResult.Error?> = _lastAiError.asStateFlow()
+
+    private val _autoFailoverBanner = MutableStateFlow<String?>(null)
+    val autoFailoverBanner: StateFlow<String?> = _autoFailoverBanner.asStateFlow()
+    fun clearAutoFailoverBanner() { _autoFailoverBanner.value = null }
+
+    fun updateAiHealth(result: com.example.data.api.GeminiResult) {
+        when (result) {
+            is com.example.data.api.GeminiResult.Text -> {
+                _aiHealthStatus.value = AiHealthStatus.OK
+                _lastAiError.value = null
+            }
+            is com.example.data.api.GeminiResult.Error -> {
+                _lastAiError.value = result
+                _aiHealthStatus.value = when (result.kind) {
+                    com.example.data.api.ErrKind.QUOTA -> AiHealthStatus.QUOTA
+                    com.example.data.api.ErrKind.BAD_KEY -> AiHealthStatus.BAD_KEY
+                    else -> AiHealthStatus.ERROR
+                }
+            }
+        }
+    }
+
+    fun testApiKey(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val key = _customGeminiKey.value
+            if (key.isBlank() || key == "MY_GEMINI_API_KEY") {
+                onResult(false, "No API key configured")
+                return@launch
+            }
+            val start = System.currentTimeMillis()
+            val result = com.example.data.api.GeminiClient.getAiResponse(
+                prompt = "Reply with the single word: OK",
+                modelName = _sttModel.value
+            )
+            val latency = System.currentTimeMillis() - start
+            when (result) {
+                is com.example.data.api.GeminiResult.Text -> onResult(true, "✓ Key valid · ${latency}ms")
+                is com.example.data.api.GeminiResult.Error -> onResult(false, "✗ ${result.suggestion}")
+            }
+        }
+    }
+
+    fun testAllModels(onProgress: (String, String) -> Unit) {
+        val models = listOf("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash")
+        viewModelScope.launch {
+            models.forEach { model ->
+                onProgress(model, "testing")
+                val start = System.currentTimeMillis()
+                val result = com.example.data.api.GeminiClient.getAiResponse(
+                    prompt = "Reply with the single word: OK",
+                    modelName = model
+                )
+                val latency = System.currentTimeMillis() - start
+                val status = when (result) {
+                    is com.example.data.api.GeminiResult.Text -> "ok:$latency"
+                    is com.example.data.api.GeminiResult.Error -> "err:${result.httpCode ?: result.kind.name}"
+                }
+                onProgress(model, status)
+            }
+        }
+    }
+
+    fun loadRecentAiCalls(): Flow<List<com.example.data.model.AiCallLog>> =
+        db.aiCallLogDao().getRecent(20)
+
+    // ── Library tab state ──────────────────────────────────────────────────
+
+    private val _librarySortOrder = MutableStateFlow(LibrarySort.LAST_MODIFIED)
+    val librarySortOrder: StateFlow<LibrarySort> = _librarySortOrder.asStateFlow()
+    fun setLibrarySort(s: LibrarySort) { _librarySortOrder.value = s }
+
+    private val _libSelectedFolderIds = MutableStateFlow<Set<Int>>(emptySet())
+    val libSelectedFolderIds: StateFlow<Set<Int>> = _libSelectedFolderIds.asStateFlow()
+
+    private val _libSelectedMeetingIds = MutableStateFlow<Set<Int>>(emptySet())
+    val libSelectedMeetingIds: StateFlow<Set<Int>> = _libSelectedMeetingIds.asStateFlow()
+
+    val isLibraryMultiSelect: StateFlow<Boolean> =
+        combine(_libSelectedFolderIds, _libSelectedMeetingIds) { f, m -> f.isNotEmpty() || m.isNotEmpty() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun toggleFolderSelection(id: Int) {
+        _libSelectedFolderIds.value = _libSelectedFolderIds.value.toMutableSet().also {
+            if (id in it) it.remove(id) else it.add(id)
+        }
+    }
+
+    fun toggleMeetingSelection(id: Int) {
+        _libSelectedMeetingIds.value = _libSelectedMeetingIds.value.toMutableSet().also {
+            if (id in it) it.remove(id) else it.add(id)
+        }
+    }
+
+    fun clearLibrarySelection() {
+        _libSelectedFolderIds.value = emptySet()
+        _libSelectedMeetingIds.value = emptySet()
+    }
+
+    fun bulkMoveSelection(targetFolderId: Int) {
+        val meetingIds = _libSelectedMeetingIds.value.toList()
+        if (meetingIds.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.moveRecordingsToFolder(meetingIds, targetFolderId)
+        }
+        clearLibrarySelection()
+    }
+
+    private val _bulkDeleteSkippedCount = MutableStateFlow(0)
+    val bulkDeleteSkippedCount: StateFlow<Int> = _bulkDeleteSkippedCount.asStateFlow()
+    fun clearBulkDeleteSkipped() { _bulkDeleteSkippedCount.value = 0 }
+
+    fun bulkDeleteSelection() {
+        val meetingIds = _libSelectedMeetingIds.value.toList()
+        val folderIds = _libSelectedFolderIds.value.toList()
+        viewModelScope.launch(Dispatchers.IO) {
+            meetingIds.forEach { id -> repository.softDeleteMeeting(id) }
+            var skipped = 0
+            folderIds.forEach { folderId ->
+                val childCount = db.folderDao().childCount(folderId)
+                val recCount = db.folderDao().recordingCount(folderId)
+                if (childCount == 0 && recCount == 0) {
+                    val folder = db.folderDao().getById(folderId)
+                    if (folder != null) db.folderDao().delete(folder)
+                } else {
+                    skipped++
+                }
+            }
+            _bulkDeleteSkippedCount.value = skipped
+        }
+        clearLibrarySelection()
+    }
+
+    fun renameMeeting(id: Int, newTitle: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sanitized = newTitle.trim().take(200).ifBlank { "Untitled recording" }
+            repository.renameMeeting(id, sanitized)
+        }
+    }
+
+    fun folderItemCountFlow(folderId: Int): Flow<Int> =
+        kotlinx.coroutines.flow.flow {
+            val recordings = db.folderDao().recordingCount(folderId)
+            val children = db.folderDao().childCount(folderId)
+            emit(recordings + children)
+        }.flowOn(Dispatchers.IO)
+
+    fun searchInFolder(query: String, rootFolderId: Int?): Flow<List<Meeting>> {
+        if (query.isBlank()) return recordingsIn(rootFolderId)
+        return kotlinx.coroutines.flow.flow {
+            // BFS to collect all descendant folder IDs
+            val allFolders = db.folderDao().getAllForTree().first()
+            val folderIdSet = mutableSetOf<Int>()
+            val queue = ArrayDeque<Int?>()
+            queue.add(rootFolderId)
+            while (queue.isNotEmpty()) {
+                val current = queue.removeFirst()
+                val children = if (current == null) {
+                    allFolders.filter { it.parentId == null }
+                } else {
+                    allFolders.filter { it.parentId == current }
+                }
+                children.forEach {
+                    folderIdSet.add(it.id)
+                    queue.add(it.id)
+                }
+            }
+            val includeRoot = rootFolderId == null
+            emitAll(repository.searchMeetingsInFolders(query, folderIdSet.toList(), includeRoot))
+        }.flowOn(Dispatchers.IO)
+    }
+
     private fun pushWidgetState() {
         viewModelScope.launch(Dispatchers.IO) {
             val ctx = getApplication<android.app.Application>()
@@ -1165,7 +1765,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 hasApiKey        = hasKey,
                 lastTitle        = lastMeeting?.title ?: "",
                 lastDuration     = durStr,
-                lastStatus       = lastMeeting?.status ?: "",
+                lastStatus       = lastMeeting?.status?.name ?: "",
                 lastMeetingId    = lastMeeting?.id ?: -1,
                 isProcessing     = _aiProcessingMeetingId.value != null
             )

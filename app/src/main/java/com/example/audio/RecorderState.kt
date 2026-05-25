@@ -10,5 +10,11 @@ sealed class RecorderState {
         val isPaused: Boolean,
         val sizeBytes: Long
     ) : RecorderState()
+    data class Saved(
+        val sessionId: String,
+        val outputAbsolutePath: String,
+        val durationMs: Long,
+        val sizeBytes: Long
+    ) : RecorderState()
     data class Error(val message: String, val recoverable: Boolean) : RecorderState()
 }

@@ -22,6 +22,13 @@ import com.example.ui.screens.*
 import com.example.ui.screens.StorageScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.AppViewModel
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import com.example.ui.theme.AppPaletteSet
+import com.example.ui.theme.DarkAppPalette
+import com.example.ui.theme.LightAppPalette
+import com.example.ui.theme.LocalAppPalette
+import com.example.ui.theme.ThemeMode
 
 class MainActivity : ComponentActivity() {
 
@@ -39,9 +46,17 @@ class MainActivity : ComponentActivity() {
     val viewModel = ViewModelProvider(this)[AppViewModel::class.java]
 
     setContent {
-      val isDarkTheme by viewModel.isDarkTheme.collectAsStateWithLifecycle()
+      val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+      val systemDark = isSystemInDarkTheme()
+      val effectiveDark = when (themeMode) {
+          ThemeMode.LIGHT  -> false
+          ThemeMode.DARK   -> true
+          ThemeMode.SYSTEM -> systemDark
+      }
+      val palette: AppPaletteSet = if (effectiveDark) DarkAppPalette else LightAppPalette
 
-      MyApplicationTheme(darkTheme = isDarkTheme) {
+      MyApplicationTheme(darkTheme = effectiveDark) {
+          CompositionLocalProvider(LocalAppPalette provides palette) {
         Surface(
           modifier = Modifier.fillMaxSize(),
           color = MaterialTheme.colorScheme.background
@@ -82,19 +97,38 @@ class MainActivity : ComponentActivity() {
               )
             }
 
-            // Screen 5-7: Meeting Detail tabs
+            // Screen 5-7: Meeting Detail tabs. Optional `seek` query param lets
+            // Smart Ask AI citations deep-link to a specific moment in the audio.
             composable(
-              route = "meeting_detail/{meetingId}",
-              arguments = listOf(navArgument("meetingId") { type = NavType.IntType })
+              route = "meeting_detail/{meetingId}?seek={seek}",
+              arguments = listOf(
+                navArgument("meetingId") { type = NavType.IntType },
+                navArgument("seek") { type = NavType.LongType; defaultValue = 0L }
+              )
             ) { backStackEntry ->
               val id = backStackEntry.arguments?.getInt("meetingId") ?: 0
+              val seekMs = backStackEntry.arguments?.getLong("seek") ?: 0L
               MeetingDetailScreen(
                 meetingId = id,
                 viewModel = viewModel,
+                initialSeekMs = seekMs,
                 onNavigateToAskAi = { navController.navigate("ask_ai/$id") },
                 onBack = { navController.navigate("main") {
                   popUpTo("main") { inclusive = false }
-                } }
+                } },
+                onNavigateToRecorder = { navController.navigate("recorder") }
+              )
+            }
+
+            // Smart Ask AI (Wave 10) — global FTS-backed chat across all meetings.
+            // Citation chips deep-link back into meeting_detail with a seek offset.
+            composable("global_ask_ai") {
+              GlobalAskAiScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onNavigateToMeeting = { meetingId, seekMs ->
+                  navController.navigate("meeting_detail/$meetingId?seek=$seekMs")
+                }
               )
             }
 
@@ -116,7 +150,8 @@ class MainActivity : ComponentActivity() {
               SettingsScreen(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
-                onNavigateToAllTasks = { navController.navigate("all_tasks") }
+                onNavigateToAllTasks = { navController.navigate("all_tasks") },
+                onNavigateToGlobalAskAi = { navController.navigate("global_ask_ai") }
               )
             }
 
@@ -133,7 +168,12 @@ class MainActivity : ComponentActivity() {
             composable("recorder") {
               RecorderScreen(
                 viewModel = viewModel,
-                onClose = { navController.popBackStack() }
+                onClose = { navController.popBackStack() },
+                onMeetingSaved = { meetingId ->
+                  navController.navigate("meeting_detail/$meetingId") {
+                    popUpTo("recorder") { inclusive = true }
+                  }
+                }
               )
             }
 
@@ -146,7 +186,8 @@ class MainActivity : ComponentActivity() {
             }
           }
         }
-      }
+          } // end CompositionLocalProvider
+      } // end MyApplicationTheme
     }
   }
 

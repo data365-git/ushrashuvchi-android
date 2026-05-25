@@ -1,0 +1,43 @@
+package com.example.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+object RecordingsPalette {
+    val Background          = Color(0xFFF1F5F9)
+    val Surface             = Color(0xFFFFFFFF)
+    val CardGradientStart   = Color(0xFFFFFFFF)
+    val CardGradientEnd     = Color(0xFFF8FAFC)
+    val OnSurface           = Color(0xFF0F172A)
+    val OnSurfaceMuted      = Color(0xFF475569)
+    val OnSurfaceVariant    = Color(0xFF334155)
+    val Secondary           = Color(0xFF475569)
+    val Outline             = Color(0xFFE2E8F0)
+    val Primary             = Color(0xFF0F172A)
+    val OnPrimary           = Color(0xFFFFFFFF)
+    val PrimaryContainer    = Color(0xFF1E293B)
+    val OnPrimaryContainer  = Color(0xFFF8FAFC)
+    val MicBg               = Color(0xFFDBE1FF)
+    val MicFg               = Color(0xFF3B82F6)
+    val CallBg              = Color(0xFFE0E3E5)
+    val CallFg              = Color(0xFF475569)
+    val OnlineBg            = Color(0x1A8B5CF6)
+    val OnlineFg            = Color(0xFF8B5CF6)
+    val NoteBg              = Color(0xFFE0E3E5)
+    val NoteFg              = Color(0xFF475569)
+    val RefinedBg           = Color(0xFFDCFCE7)
+    val RefinedFg           = Color(0xFF1B5E20)
+    val RefinedBorder       = Color(0x3310B981)
+    val GeneratingBg        = Color(0xFFECEEF0)
+    val GeneratingFg        = Color(0xFF334155)
+    val NoAiBg              = Color(0xFFECEEF0)
+    val NoAiFg              = Color(0xFF475569)
+    val FailedBg            = Color(0xFFFFE4E6)
+    val FailedFg            = Color(0xFFB91C1C)
+    val FailedBorder        = Color(0x33EF4444)
+    val FabShadow           = Color(0x660F172A)
+    val SurfaceVariant          = Color(0xFFE0E3E5)
+    val SurfaceContainer        = Color(0xFFECEEF0)
+    val SurfaceContainerHigh    = Color(0xFFE6E8EA)
+    val SurfaceContainerHighest = Color(0xFFE0E3E5)
+    val InnerGlow               = Color(0xFFFFFFFF)    // use .copy(alpha=0.6f) at call site
+}

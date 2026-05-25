@@ -17,7 +17,7 @@ interface MeetingDao {
     @Query("SELECT COUNT(*) FROM meetings")
     suspend fun getMeetingsCount(): Int
 
-    @Query("SELECT * FROM meetings ORDER BY date DESC")
+    @Query("SELECT * FROM meetings WHERE isDeleted = 0 ORDER BY date DESC")
     fun getAllMeetings(): Flow<List<Meeting>>
 
     @Query("SELECT * FROM meetings WHERE id = :id")
@@ -35,11 +35,20 @@ interface MeetingDao {
     @Delete
     suspend fun deleteMeeting(meeting: Meeting)
 
+    @Query("DELETE FROM meetings WHERE id = :id")
+    suspend fun deleteMeetingById(id: Int)
+
     @Query("SELECT * FROM transcript_lines WHERE meetingId = :meetingId ORDER BY timestampStart ASC")
     fun getTranscriptLines(meetingId: Int): Flow<List<TranscriptLine>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTranscriptLines(lines: List<TranscriptLine>)
+
+    @Update
+    suspend fun updateTranscriptLine(line: TranscriptLine)
+
+    @Query("UPDATE transcript_lines SET speaker = :newName WHERE meetingId = :meetingId AND speaker = :oldName")
+    suspend fun renameTranscriptSpeaker(meetingId: Int, oldName: String, newName: String)
 
     @Query("SELECT * FROM tasks WHERE meetingId = :meetingId ORDER BY id ASC")
     fun getTasks(meetingId: Int): Flow<List<Task>>
@@ -83,10 +92,10 @@ interface MeetingDao {
     @Query("SELECT * FROM meetings WHERE isDeleted = 1 AND deletedAt < :cutoff")
     suspend fun getDeletedOlderThan(cutoff: Long): List<Meeting>
 
-    @Query("SELECT * FROM meetings")
+    @Query("SELECT * FROM meetings WHERE isDeleted = 0")
     suspend fun getAllMeetingsSync(): List<Meeting>
 
-    @Query("SELECT * FROM meetings WHERE folderId = :folderId")
+    @Query("SELECT * FROM meetings WHERE folderId = :folderId AND isDeleted = 0")
     suspend fun getByFolderSync(folderId: Int): List<Meeting>
 
     @Query("DELETE FROM meetings WHERE isDemo = 1")
@@ -104,13 +113,58 @@ interface MeetingDao {
     @Query("SELECT * FROM tasks WHERE meetingId = :meetingId ORDER BY id ASC")
     suspend fun getTasksForMeetingSync(meetingId: Int): List<Task>
 
+    @Query("SELECT * FROM transcript_lines WHERE meetingId = :meetingId ORDER BY timestampStart ASC")
+    suspend fun getTranscriptForMeetingSync(meetingId: Int): List<TranscriptLine>
+
     @Query("""
         SELECT DISTINCT m.* FROM meetings m
         LEFT JOIN transcript_lines t ON t.meetingId = m.id
-        WHERE m.title LIKE '%' || :q || '%'
+        WHERE (m.title LIKE '%' || :q || '%'
            OR m.summary LIKE '%' || :q || '%'
-           OR t.text LIKE '%' || :q || '%'
+           OR t.text LIKE '%' || :q || '%')
+          AND m.isDeleted = 0
         ORDER BY m.date DESC
     """)
     fun searchMeetings(q: String): kotlinx.coroutines.flow.Flow<List<Meeting>>
+
+    @Query("UPDATE meetings SET title = :title WHERE id = :id")
+    suspend fun updateTitle(id: Int, title: String)
+
+    @Query("UPDATE meetings SET isStarred = :starred WHERE id = :id")
+    suspend fun setStarred(id: Int, starred: Boolean)
+
+    @Query("UPDATE meetings SET durationSeconds = :seconds WHERE id = :id")
+    suspend fun updateDurationSeconds(id: Int, seconds: Long)
+
+    @Query("""
+        SELECT DISTINCT m.* FROM meetings m
+        LEFT JOIN transcript_lines t ON t.meetingId = m.id
+        WHERE (m.folderId IN (:folderIds) OR (:includeRoot = 1 AND m.folderId IS NULL))
+          AND (m.title LIKE '%' || :q || '%'
+               OR m.summary LIKE '%' || :q || '%'
+               OR t.text LIKE '%' || :q || '%')
+          AND m.isDeleted = 0
+        ORDER BY m.date DESC
+    """)
+    fun searchMeetingsInFolders(q: String, folderIds: List<Int>, includeRoot: Int): kotlinx.coroutines.flow.Flow<List<Meeting>>
+
+    @Query("DELETE FROM transcript_lines WHERE id = :id")
+    suspend fun deleteTranscriptLineById(id: Int)
+
+    @Query("SELECT * FROM meetings WHERE isDeleted = 1")
+    suspend fun getAllDeleted(): List<Meeting>
+
+    // --- Wave 9: AI Pipeline Decomposition helpers ---
+
+    @Query("UPDATE meetings SET summary = :summary WHERE id = :id")
+    suspend fun updateMeetingSummary(id: Int, summary: String)
+
+    @Query("UPDATE meetings SET refinedTranscriptJson = :json WHERE id = :id")
+    suspend fun updateRefinedJson(id: Int, json: String)
+
+    @Query("DELETE FROM transcript_lines WHERE meetingId = :meetingId")
+    suspend fun deleteTranscriptForMeeting(meetingId: Int)
+
+    @Insert
+    suspend fun insertTranscriptLine(line: TranscriptLine): Long
 }

@@ -55,4 +55,7 @@ interface FolderDao {
 
     @Query("SELECT SUM(durationSeconds) FROM meetings WHERE folderId = :id AND isDeleted = 0")
     suspend fun totalDuration(id: Int): Long?
+
+    @Query("UPDATE folders SET sortOrder = :order WHERE id = :id")
+    suspend fun setSortOrder(id: Int, order: Int)
 }

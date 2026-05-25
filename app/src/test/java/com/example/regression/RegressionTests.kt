@@ -1,11 +1,17 @@
 package com.example.regression
 
+import com.example.data.api.AudioMimeMap
+import com.example.ui.components.StatusBadgeLabels
 import org.junit.Assert.*
 import org.junit.Test
 
 /**
  * Regression tests for the 6 most common bugs fixed in this codebase.
  * Each test pins the exact behavior that was broken so it can never silently regress.
+ *
+ * Where possible, tests route through the real production objects
+ * ([AudioMimeMap], [StatusBadgeLabels]) rather than duplicating logic locally —
+ * so a regression in production code surfaces here automatically.
  */
 class RegressionTests {
 
@@ -14,23 +20,25 @@ class RegressionTests {
     // Gemini's accepted set: wav, mp3, aiff, aac, ogg, flac — 3gpp is NOT on it.
     @Test
     fun `m4a extension maps to audio aac`() {
-        assertEquals("audio/aac", mimeForExtension("m4a"))
+        assertEquals("audio/aac", AudioMimeMap.forExtension("m4a"))
     }
 
     @Test
     fun `3gp extension returns null triggering pre-flight rejection`() {
-        assertNull("3gp files must be rejected before reaching Gemini",
-            mimeForExtension("3gp"))
+        assertFalse("3gp files must be rejected before reaching Gemini",
+            AudioMimeMap.isSupported("3gp"))
     }
 
     @Test
     fun `wav extension maps to audio wav`() {
-        assertEquals("audio/wav", mimeForExtension("wav"))
+        assertEquals("audio/wav", AudioMimeMap.forExtension("wav"))
     }
 
     @Test
     fun `unknown extension returns null`() {
-        assertNull(mimeForExtension("xyz"))
+        assertFalse("Unknown extensions must not be treated as supported",
+            AudioMimeMap.isSupported("xyz"))
+        assertEquals("application/octet-stream", AudioMimeMap.forExtension("xyz"))
     }
 
     // ── Bug 2: Demo meetings must not resurrect after dismiss ────────────────────
@@ -63,25 +71,27 @@ class RegressionTests {
     // A FAILED meeting had no card, no error message, no retry — completely invisible failure.
     @Test
     fun `card is shown for RECORDED status`() {
-        assertTrue(shouldShowGenerateCard(status = "RECORDED", summaryBlank = true))
+        assertTrue(StatusBadgeLabels.shouldShowGenerateCard("RECORDED"))
     }
 
     @Test
     fun `card is shown for FAILED status`() {
         assertTrue("FAILED meetings must also show the retry card",
-            shouldShowGenerateCard(status = "FAILED", summaryBlank = true))
+            StatusBadgeLabels.shouldShowGenerateCard("FAILED"))
     }
 
     @Test
     fun `card is hidden when summary already exists`() {
-        assertFalse("Card must not show when summary is populated",
-            shouldShowGenerateCard(status = "COMPLETED", summaryBlank = false))
+        // Summary-blank gating happens at the call site; the production helper itself
+        // only decides whether the status qualifies. COMPLETED never qualifies.
+        assertFalse("Card must not show for COMPLETED status",
+            StatusBadgeLabels.shouldShowGenerateCard("COMPLETED"))
     }
 
     @Test
     fun `card is hidden for PROCESSING status`() {
         assertFalse("Card must not show while actively processing",
-            shouldShowGenerateCard(status = "PROCESSING", summaryBlank = true))
+            StatusBadgeLabels.shouldShowGenerateCard("PROCESSING"))
     }
 
     // ── Bug 4: Gemini 400 error must surface real message, not Moshi parse error ─
@@ -117,55 +127,32 @@ class RegressionTests {
     // that it's not empty string (which would render as an invisible tap target).
     @Test
     fun `FAILED status badge label is non-empty and contains Retry`() {
-        val label = badgeLabelForStatus("FAILED")
+        val label = StatusBadgeLabels.forStatus("FAILED")
         assertTrue("FAILED badge must be non-empty", label.isNotBlank())
         assertTrue("FAILED badge must mention retry", label.contains("Retry", ignoreCase = true))
     }
 
     @Test
     fun `COMPLETED status badge label does not mention Retry`() {
-        val label = badgeLabelForStatus("COMPLETED")
+        val label = StatusBadgeLabels.forStatus("COMPLETED")
         assertFalse("COMPLETED badge must not say Retry", label.contains("Retry", ignoreCase = true))
     }
 
-    // ── Pure helper functions (inline the exact logic from the real code) ────────
+    // ── Test-only fixtures (not production code) ────────────────────────────────
 
-    private fun mimeForExtension(ext: String): String? = when (ext.lowercase()) {
-        "m4a", "mp4", "aac" -> "audio/aac"
-        "wav"               -> "audio/wav"
-        "mp3"               -> "audio/mpeg"
-        "ogg", "oga", "opus"-> "audio/ogg"
-        "flac"              -> "audio/flac"
-        "aiff", "aif"       -> "audio/aiff"
-        else                -> null  // 3gp, amr, unknown → rejected
-    }
-
-    private fun shouldShowGenerateCard(status: String, summaryBlank: Boolean): Boolean {
-        val needsAi = summaryBlank
-        val isFailed = status == "FAILED"
-        return needsAi && (status == "RECORDED" || isFailed)
-    }
-
+    // test-only fixture, not production code
+    // Mirrors the GeminiResult.Error → GeminiException path in the fixed code.
+    // Before fix: returned "API Error: HTTP $httpCode …" which Moshi then choked on.
+    // After fix: GeminiClient parses the error body and returns just the message string.
+    // The raw status code ("HTTP 403") must NOT appear in the surfaced error.
     private fun simulateGeminiError(httpCode: Int, message: String): String {
-        // Mirrors the GeminiResult.Error → GeminiException path in the fixed code.
-        // Before fix: returned "API Error: HTTP $httpCode …" which Moshi then choked on.
-        // After fix: GeminiClient parses the error body and returns just the message string.
-        // The raw status code ("HTTP 403") must NOT appear in the surfaced error.
         return "PERMISSION_DENIED: $message"
     }
 
+    // test-only fixture, not production code
+    // Mirrors the fixed AppViewModel.startRecording() call:
+    // File.createTempFile("meeting_recording_", ".m4a", cacheDir)
     private fun simulateNewRecordingFilename(): String {
-        // Mirrors the fixed AppViewModel.startRecording() call:
-        // File.createTempFile("meeting_recording_", ".m4a", cacheDir)
         return "meeting_recording_${System.currentTimeMillis()}.m4a"
-    }
-
-    private fun badgeLabelForStatus(status: String): String = when (status) {
-        "RECORDED"   -> "Recorded · No AI yet"
-        "COMPLETED"  -> "Completed"
-        "FAILED"     -> "Failed · Retry"
-        "PROCESSING" -> "Processing"
-        "RECORDING"  -> "Recording"
-        else         -> status
     }
 }

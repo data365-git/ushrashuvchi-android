@@ -18,6 +18,8 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    buildConfigField("String", "SENTRY_DSN", "\"\"")
+    buildConfigField("String", "CLOUD_API_BASE_URL", "\"https://ushrashuvchi-backend-production.up.railway.app\"")
   }
 
   signingConfigs {
@@ -55,7 +57,20 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      isReturnDefaultValues = true
+    }
+  }
+
+  sourceSets {
+    getByName("androidTest").assets.srcDirs("$projectDir/schemas")
+  }
+}
+
+ksp {
+  arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
@@ -109,6 +124,11 @@ dependencies {
   testImplementation(libs.roborazzi)
   testImplementation(libs.roborazzi.compose)
   testImplementation(libs.roborazzi.junit.rule)
+  testImplementation(libs.mockwebserver)
+  testImplementation(libs.turbine)
+  testImplementation(libs.room.testing)
+  testImplementation(libs.workmanager.testing)
+  testImplementation(libs.mockk)
   androidTestImplementation(platform(libs.androidx.compose.bom))
   androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   androidTestImplementation(libs.androidx.espresso.core)
@@ -119,4 +139,6 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
   implementation(libs.glance.appwidget)
+  implementation(libs.sentry.android)
+  implementation(libs.androidx.work.runtime.ktx)
 }

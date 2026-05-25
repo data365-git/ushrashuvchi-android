@@ -7,8 +7,6 @@ object GeminiModels {
         Option("gemini-2.5-pro",   "Gemini 2.5 Pro",   "Best quality"),
         Option("gemini-2.5-flash", "Gemini 2.5 Flash", "Recommended"),
         Option("gemini-2.0-flash", "Gemini 2.0 Flash", "Fast"),
-        Option("gemini-1.5-pro",   "Gemini 1.5 Pro",   "Legacy"),
-        Option("gemini-1.5-flash", "Gemini 1.5 Flash", "Legacy"),
     )
     val LLM_MODELS = STT_MODELS
 

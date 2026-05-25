@@ -69,9 +69,27 @@ fun StorageScreen(
     onBack: () -> Unit
 ) {
     val breakdown by viewModel.storageBreakdown.collectAsState()
+    val emptyTrashConfirm by viewModel.emptyTrashConfirmRequested.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.refreshStorageBreakdown()
+    }
+
+    if (emptyTrashConfirm) {
+        AlertDialog(
+            onDismissRequest = { viewModel.cancelEmptyTrashConfirmation() },
+            title = { Text("Empty trash?") },
+            text = { Text("All recordings in trash will be permanently deleted. This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.cancelEmptyTrashConfirmation()
+                    viewModel.emptyTrash()
+                }) { Text("Empty", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelEmptyTrashConfirmation() }) { Text("Cancel") }
+            }
+        )
     }
 
     Scaffold(
@@ -160,7 +178,7 @@ fun StorageScreen(
                 Spacer(modifier = Modifier.height(4.dp))
                 TrashCard(
                     trashBytes = breakdown.trashBytes,
-                    onEmptyTrash = { viewModel.emptyTrash() },
+                    onEmptyTrash = { viewModel.requestEmptyTrashConfirmation() },
                     onRescan = { viewModel.rescanRecordings() }
                 )
                 Spacer(modifier = Modifier.height(16.dp))

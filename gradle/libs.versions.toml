@@ -39,6 +39,12 @@ roborazzi = "1.59.0"
 firebaseBom = "34.12.0"
 secretsGradlePlugin = "2.0.1"
 glanceAppwidget = "1.1.0"
+sentry = "7.14.0"
+workRuntimeKtx = "2.9.1"
+mockwebserver = "5.0.0-alpha.14"
+turbine = "1.1.0"
+workmanager-testing = "2.10.0"
+mockk = "1.13.13"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -89,6 +95,13 @@ roborazzi-junit-rule = { group = "io.github.takahirom.roborazzi", name = "robora
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 firebase-ai = { group = "com.google.firebase", name = "firebase-ai" }
 glance-appwidget = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glanceAppwidget" }
+sentry-android = { group = "io.sentry", name = "sentry-android", version.ref = "sentry" }
+androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workRuntimeKtx" }
+mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "mockwebserver" }
+turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
+room-testing = { group = "androidx.room", name = "room-testing", version.ref = "roomRuntime" }
+workmanager-testing = { group = "androidx.work", name = "work-testing", version.ref = "workmanager-testing" }
+mockk = { group = "io.mockk", name = "mockk-android", version.ref = "mockk" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

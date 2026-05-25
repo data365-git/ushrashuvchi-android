@@ -46,6 +46,7 @@ class RecordingService : Service() {
 
         private val _state = MutableStateFlow<RecorderState>(RecorderState.Idle)
         val state: StateFlow<RecorderState> = _state.asStateFlow()
+        fun resetToIdle() { _state.value = RecorderState.Idle }
     }
 
     private var recorder: MediaRecorder? = null
@@ -69,6 +70,7 @@ class RecordingService : Service() {
     private var recoveryStore: RecoveryStore? = null
     private var fileManager: RecordingFileManager? = null
     private var db: AppDatabase? = null
+    private val notificationManager by lazy { getSystemService(NotificationManager::class.java) }
 
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -102,6 +104,12 @@ class RecordingService : Service() {
                 val delta = if (lastTickTime > 0) now - lastTickTime else 100L
                 lastTickTime = now
                 elapsedMs += delta
+                // Hard cap at 6 hours — auto-stop to prevent unbounded files
+                if (elapsedMs >= 6 * 60 * 60 * 1000L) {
+                    tickHandler.removeCallbacks(this)
+                    handleStop()
+                    return
+                }
                 val amplitude = try { recorder?.maxAmplitude ?: 0 } catch (_: Exception) { 0 }
                 val size = outputPath?.let { File(it).length() } ?: 0L
                 _state.value = RecorderState.Active(
@@ -158,6 +166,19 @@ class RecordingService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
+        // Reject if less than 100 MB free
+        val outFile = java.io.File(outputPath!!)
+        val stats = android.os.StatFs(outFile.parent ?: filesDir.path)
+        if (stats.availableBytes < 100L * 1024 * 1024) {
+            _state.value = RecorderState.Error(
+                "Less than 100 MB free (${stats.availableBytes / 1024 / 1024} MB). Free up space and try again.",
+                recoverable = false
+            )
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
+
         try {
             recorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 MediaRecorder(applicationContext)
@@ -171,10 +192,14 @@ class RecordingService : Service() {
                     setAudioSource(MediaRecorder.AudioSource.MIC)
                 }
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioSamplingRate(44100)
+                try {
+                    setAudioEncoder(MediaRecorder.AudioEncoder.HE_AAC)
+                } catch (_: Exception) {
+                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                }
+                setAudioSamplingRate(22050)
                 setAudioChannels(1)
-                setAudioEncodingBitRate(64_000)
+                setAudioEncodingBitRate(32_000)
                 setMaxFileSize(2L * 1024 * 1024 * 1024)
                 setOutputFile(outputPath)
                 prepare()
@@ -209,6 +234,7 @@ class RecordingService : Service() {
         if (current is RecorderState.Active) {
             _state.value = current.copy(isPaused = true)
         }
+        notificationManager?.notify(NOTIFICATION_ID, buildNotification(isPaused = true))
     }
 
     private fun resumeRecorder() {
@@ -222,6 +248,7 @@ class RecordingService : Service() {
         if (current is RecorderState.Active) {
             _state.value = current.copy(isPaused = false)
         }
+        notificationManager?.notify(NOTIFICATION_ID, buildNotification(isPaused = false))
     }
 
     private fun handleStop() {
@@ -234,8 +261,12 @@ class RecordingService : Service() {
         } catch (_: Exception) {}
         recorder = null
 
+        recoveryStore?.clear()
         if (path != null && sid != null) {
             val audioFile = File(path)
+            // Emit Saved synchronously — file is on disk after recorder.stop()
+            _state.value = RecorderState.Saved(sid, path, elapsedMs, audioFile.length())
+            // Write sidecar best-effort (after state transition)
             serviceScope.launch {
                 try {
                     val sidecar = RecordingSidecar(
@@ -247,7 +278,7 @@ class RecordingService : Service() {
                         mimeType = "audio/mp4",
                         sampleRateHz = 44100,
                         channels = 1,
-                        bitrateKbps = 64,
+                        bitrateKbps = 32,
                         sizeBytes = audioFile.length(),
                         checksum = null,
                         device = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
@@ -258,10 +289,9 @@ class RecordingService : Service() {
                     db?.recordingSessionDao()?.updateState(sid, "COMPLETED", System.currentTimeMillis())
                 } catch (_: Exception) {}
             }
+        } else {
+            _state.value = RecorderState.Idle
         }
-
-        recoveryStore?.clear()
-        _state.value = RecorderState.Idle
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -319,22 +349,27 @@ class RecordingService : Service() {
         getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
     }
 
-    private fun buildNotification() = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setContentTitle("Recording in progress")
-        .setContentText(topic.ifBlank { "Meeting recording" })
-        .setSmallIcon(android.R.drawable.presence_audio_online)
-        .setOngoing(true)
-        .addAction(
-            android.R.drawable.ic_media_pause,
-            "Pause",
-            makePendingIntent(ACTION_PAUSE)
-        )
-        .addAction(
-            android.R.drawable.ic_menu_close_clear_cancel,
-            "Stop",
-            makePendingIntent(ACTION_STOP)
-        )
-        .build()
+    private fun buildNotification(isPaused: Boolean = false): android.app.Notification {
+        val n = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(if (isPaused) "Recording paused" else "Recording in progress")
+            .setContentText(topic.ifBlank { "Meeting recording" })
+            .setSmallIcon(android.R.drawable.presence_audio_online)
+            .setOngoing(true)
+            .addAction(
+                if (isPaused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,
+                if (isPaused) "Resume" else "Pause",
+                makePendingIntent(if (isPaused) ACTION_RESUME else ACTION_PAUSE)
+            )
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Stop",
+                makePendingIntent(ACTION_STOP)
+            )
+            .build()
+        // FLAG_NO_CLEAR prevents swipe-dismiss on stock Android; HyperOS may still allow it
+        n.flags = n.flags or android.app.Notification.FLAG_NO_CLEAR or android.app.Notification.FLAG_ONGOING_EVENT
+        return n
+    }
 
     private fun makePendingIntent(action: String): PendingIntent {
         val intent = Intent(this, RecordingService::class.java).apply { this.action = action }
@@ -344,7 +379,13 @@ class RecordingService : Service() {
         )
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        if (_state.value is RecorderState.Active) saveCheckpoint()
+    }
+
     override fun onDestroy() {
+        if (_state.value is RecorderState.Active) saveCheckpoint()
         super.onDestroy()
         tickHandler.removeCallbacks(tickRunnable)
         try { recorder?.release() } catch (_: Exception) {}

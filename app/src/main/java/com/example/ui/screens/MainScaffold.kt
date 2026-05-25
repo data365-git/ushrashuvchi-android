@@ -1,6 +1,12 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,25 +23,35 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.audio.OemHelper
+import com.example.audio.RecorderState
+import com.example.audio.RecordingService
+import com.example.audio.RecoveryCheckpoint
 import com.example.data.model.Folder
 import com.example.data.model.Meeting
+import com.example.ui.theme.RecordingsPalette
 import com.example.ui.viewmodel.AppViewModel
 
-enum class BottomTab(val label: String, val icon: ImageVector) {
-    RECORDINGS("Recordings", Icons.Default.GraphicEq),
-    LIBRARY("Library", Icons.Default.Folder),
-    RECORD("", Icons.Default.Mic),
-    TASKS("Tasks", Icons.Default.CheckCircle),
-    SETTINGS("Settings", Icons.Default.Settings)
+enum class BottomTab(val label: String, val icon: ImageVector, val activeIcon: ImageVector) {
+    RECORDINGS("Recordings", Icons.Outlined.GraphicEq,    Icons.Filled.GraphicEq),
+    LIBRARY   ("Library",    Icons.Outlined.FolderOpen,   Icons.Filled.FolderOpen),
+    TASKS     ("Tasks",      Icons.Outlined.CheckCircle,  Icons.Filled.CheckCircle),
+    SETTINGS  ("Settings",   Icons.Outlined.Settings,     Icons.Filled.Settings)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,66 +62,298 @@ fun MainScaffold(
     onNavigateToMeeting: (Int) -> Unit,
     onNavigateToStorage: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     var selectedTab by rememberSaveable { mutableStateOf(BottomTab.RECORDINGS) }
+    val checkpoint by viewModel.unrecoveredCheckpoint.collectAsState()
+
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+
+    // Observe app-scope snackbar events (e.g., undo-delete from any screen)
+    LaunchedEffect(Unit) {
+        viewModel.snackbarEvents.collect { event ->
+            val result = snackbarHostState.showSnackbar(
+                message = event.message,
+                actionLabel = event.actionLabel,
+                duration = androidx.compose.material3.SnackbarDuration.Short
+            )
+            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                event.onAction?.invoke()
+            }
+        }
+    }
+
+    checkpoint?.let { cp ->
+        val startTime = remember(cp) {
+            java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(cp.startedAt))
+        }
+        AlertDialog(
+            onDismissRequest = { /* require explicit choice */ },
+            title = { Text("Unfinished recording", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "A recording from $startTime wasn't saved. " +
+                    "The audio file is still on disk. Recover it or discard?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.recoverUnfinishedSession()
+                }) {
+                    Text("Recover", fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissUnrecoveredCheckpoint() }) {
+                    Text("Discard", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    // One-time Xiaomi onboarding dialog
+    val prefs = remember { context.getSharedPreferences("ushrashuvchi_prefs", android.content.Context.MODE_PRIVATE) }
+    var showXiaomiDialog by remember {
+        mutableStateOf(
+            OemHelper.isXiaomi && !prefs.getBoolean("xiaomi_onboarding_seen", false)
+        )
+    }
+    if (showXiaomiDialog) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Keep recording active", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Xiaomi/Redmi devices can stop background processes unexpectedly. " +
+                    "To prevent lost recordings, open App Settings and enable Autostart, " +
+                    "then disable Battery Saver for this app."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    prefs.edit().putBoolean("xiaomi_onboarding_seen", true).apply()
+                    showXiaomiDialog = false
+                    try {
+                        val intent = Intent("miui.intent.action.APP_PERM_EDITOR").apply {
+                            setClassName("com.miui.securitycenter",
+                                "com.miui.permcenter.autostart.AutoStartManagementActivity")
+                        }
+                        context.startActivity(intent)
+                    } catch (_: Exception) {
+                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = android.net.Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    }
+                }) { Text("Open App Settings") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    prefs.edit().putBoolean("xiaomi_onboarding_seen", true).apply()
+                    showXiaomiDialog = false
+                }) { Text("Got it") }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
 
     Scaffold(
+        containerColor = Color(0xFFF1F5F9),
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            if (selectedTab == BottomTab.RECORDINGS) {
+                RecordingsFab(onClick = onNavigateToRecorder)
+            }
+        },
+        floatingActionButtonPosition = androidx.compose.material3.FabPosition.End,
         bottomBar = {
-            NavigationBar {
-                BottomTab.values().forEach { tab ->
-                    if (tab == BottomTab.RECORD) {
-                        NavigationBarItem(
-                            selected = false,
-                            onClick = onNavigateToRecorder,
-                            icon = {
+            Column {
+                val playingMeeting by viewModel.currentPlayingMeeting.collectAsStateWithLifecycle(initialValue = null)
+                val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle(initialValue = false)
+                val playbackMs by viewModel.playbackMs.collectAsStateWithLifecycle(initialValue = 0L)
+                val durationMs by viewModel.durationMs.collectAsStateWithLifecycle(initialValue = 0L)
+
+                AnimatedVisibility(
+                    visible = playingMeeting != null,
+                    enter = slideInVertically { it } + fadeIn(),
+                    exit = slideOutVertically { it } + fadeOut()
+                ) {
+                    playingMeeting?.let { m ->
+                        MiniPlayer(
+                            meeting = m,
+                            isPlaying = isPlaying,
+                            playbackMs = playbackMs,
+                            durationMs = durationMs,
+                            onTapOpen = { onNavigateToMeeting(m.id) },
+                            onPlayPause = {
+                                if (isPlaying) viewModel.pauseAudio()
+                                else viewModel.playAudio(m)
+                            },
+                            onClose = { viewModel.stopAndClearPlayback() }
+                        )
+                    }
+                }
+
+            // Outer Box with Background color kills the dark-corner bleed at rounded clip edges (rule 11.1)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(RecordingsPalette.Background)
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(88.dp)
+                        .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)),
+                    color = Color.White.copy(alpha = 0.95f),
+                    shadowElevation = 4.dp,
+                    tonalElevation = 0.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        BottomTab.values().forEach { tab ->
+                            val isSelected = tab == selectedTab
+                            if (isSelected) {
+                                Surface(
+                                    shape = RoundedCornerShape(18.dp),
+                                    color = RecordingsPalette.Primary,
+                                    modifier = Modifier
+                                        .wrapContentWidth()
+                                        .clickable { /* active tab — no-op */ }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            tab.activeIcon,
+                                            contentDescription = tab.label,
+                                            tint = RecordingsPalette.OnPrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            tab.label,
+                                            color = RecordingsPalette.OnPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Clip
+                                        )
+                                    }
+                                }
+                            } else {
                                 Box(
                                     modifier = Modifier
                                         .size(48.dp)
                                         .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary),
+                                        .clickable { selectedTab = tab },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Mic,
-                                        contentDescription = "Record",
-                                        tint = MaterialTheme.colorScheme.onPrimary,
-                                        modifier = Modifier.size(24.dp)
+                                        tab.icon,
+                                        contentDescription = tab.label,
+                                        tint = RecordingsPalette.OnSurfaceMuted,
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
-                            },
-                            label = null
-                        )
-                    } else {
-                        NavigationBarItem(
-                            selected = selectedTab == tab,
-                            onClick = { selectedTab = tab },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label) }
-                        )
+                            }
+                        }
                     }
                 }
             }
+            }
         }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding)) {
-            when (selectedTab) {
-                BottomTab.RECORDINGS -> RecordingsLibraryScreen(
-                    viewModel = viewModel,
-                    onOpenMeeting = onNavigateToMeeting,
-                    onStartRecording = onNavigateToRecorder
+        Column(modifier = Modifier.padding(innerPadding)) {
+            // Show banner whenever a recording is active — tapping navigates to recorder
+            val recorderStateForBanner by RecordingService.state.collectAsState()
+            if (recorderStateForBanner is RecorderState.Active) {
+                ActiveRecordingBanner(
+                    onTap = { onNavigateToRecorder() },
+                    onStop = {
+                        val stopIntent = Intent(context, RecordingService::class.java).apply {
+                            action = RecordingService.ACTION_STOP
+                        }
+                        context.startService(stopIntent)
+                    }
                 )
-                BottomTab.LIBRARY -> LibraryScreen(viewModel = viewModel)
-                BottomTab.RECORD -> Unit
-                BottomTab.TASKS -> AllTasksScreen(
-                    viewModel = viewModel,
-                    onBack = {},
-                    onOpenMeeting = onNavigateToMeeting
-                )
-                BottomTab.SETTINGS -> SettingsScreen(
-                    viewModel = viewModel,
-                    onBack = {},
-                    onNavigateToAllTasks = { selectedTab = BottomTab.TASKS },
-                    onNavigateToStorage = onNavigateToStorage
-                )
+            }
+            // movableContentOf lets Compose reuse the SAME composable instance across tab
+            // switches — preserves internal state (scroll position, etc.) without recomposing
+            // from scratch. Declared at this outer scope so the AnimatedContent block always
+            // references the same instances regardless of `tab`.
+            val recordingsContent = remember {
+                movableContentOf {
+                    RecordingsLibraryScreen(
+                        viewModel = viewModel,
+                        onOpenMeeting = onNavigateToMeeting,
+                        onStartRecording = onNavigateToRecorder
+                    )
+                }
+            }
+            val libraryContent = remember {
+                movableContentOf {
+                    LibraryScreen(
+                        viewModel = viewModel,
+                        onOpenMeeting = onNavigateToMeeting
+                    )
+                }
+            }
+            val tasksContent = remember {
+                movableContentOf {
+                    AllTasksScreen(
+                        viewModel = viewModel,
+                        onBack = {},
+                        onOpenMeeting = onNavigateToMeeting
+                    )
+                }
+            }
+            val settingsContent = remember {
+                movableContentOf {
+                    SettingsScreen(
+                        viewModel = viewModel,
+                        onBack = {},
+                        onNavigateToAllTasks = { selectedTab = BottomTab.TASKS },
+                        onNavigateToStorage = onNavigateToStorage
+                    )
+                }
+            }
+
+            Box(modifier = Modifier.weight(1f)) {
+                androidx.compose.animation.AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = {
+                        val forward = targetState.ordinal > initialState.ordinal
+                        val direction = if (forward) 1 else -1
+                        (androidx.compose.animation.slideInHorizontally(
+                            animationSpec = androidx.compose.animation.core.tween(220)
+                        ) { it * direction } + androidx.compose.animation.fadeIn(
+                            animationSpec = androidx.compose.animation.core.tween(120)
+                        )).togetherWith(
+                            androidx.compose.animation.slideOutHorizontally(
+                                animationSpec = androidx.compose.animation.core.tween(220)
+                            ) { -it * direction } + androidx.compose.animation.fadeOut(
+                                animationSpec = androidx.compose.animation.core.tween(120)
+                            )
+                        )
+                    },
+                    label = "tab_switch",
+                    modifier = Modifier.fillMaxSize()
+                ) { tab ->
+                    when (tab) {
+                        BottomTab.RECORDINGS -> recordingsContent()
+                        BottomTab.LIBRARY -> libraryContent()
+                        BottomTab.TASKS -> tasksContent()
+                        BottomTab.SETTINGS -> settingsContent()
+                    }
+                }
             }
         }
     }
@@ -113,7 +361,7 @@ fun MainScaffold(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-private fun LibraryScreen(viewModel: AppViewModel) {
+private fun LegacyLibraryScreen(viewModel: AppViewModel) {
     // Nav stack: null = root, Int = folderId
     val navStack = remember { mutableStateListOf<Int?>(null) }
     val currentFolderId = navStack.last()
@@ -224,7 +472,7 @@ private fun LibraryScreen(viewModel: AppViewModel) {
                     )
                 }
                 if (isListMode) {
-                    items(childFolders, key = { it.id }) { folder ->
+                    items(childFolders, key = { "folder-${it.id}" }) { folder ->
                         FolderRow(
                             folder = folder,
                             onClick = {
@@ -294,7 +542,7 @@ private fun LibraryScreen(viewModel: AppViewModel) {
                     }
                 }
             } else {
-                items(recordings, key = { it.id }) { meeting ->
+                items(recordings, key = { "meeting-${it.id}" }) { meeting ->
                     val isSelected = meeting.id in selectedIds
                     LibraryRecordingRow(
                         meeting = meeting,
@@ -500,13 +748,15 @@ private fun LibraryRecordingRow(
                 }
             }
             Text(
-                text = meeting.status,
+                text = meeting.status.name,
                 style = MaterialTheme.typography.labelSmall,
+                // Gap 4: exhaustive over MeetingStatus — adding a new state forces a compile error.
                 color = when (meeting.status) {
-                    "COMPLETED" -> Color(0xFF10B981)
-                    "PROCESSING" -> Color(0xFFF59E0B)
-                    "RECORDING" -> Color(0xFFEF4444)
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    com.example.data.model.MeetingStatus.COMPLETED  -> Color(0xFF10B981)
+                    com.example.data.model.MeetingStatus.PROCESSING -> Color(0xFFF59E0B)
+                    com.example.data.model.MeetingStatus.RECORDING  -> Color(0xFFEF4444)
+                    com.example.data.model.MeetingStatus.RECORDED,
+                    com.example.data.model.MeetingStatus.FAILED     -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )
         }
@@ -540,6 +790,32 @@ private fun formatLibDuration(seconds: Long): String {
     val m = (seconds % 3600) / 60
     val s = seconds % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+@Composable
+private fun RecordingsFab(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .size(56.dp)
+            .shadow(
+                elevation = 16.dp,
+                shape = RoundedCornerShape(20.dp),
+                spotColor = Color(0x660F172A),
+                ambientColor = Color(0x660F172A)
+            ),
+        shape = RoundedCornerShape(20.dp),
+        color = Color(0xFF0F172A)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                Icons.Filled.Mic,
+                contentDescription = "Start recording",
+                tint = Color.White,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+    }
 }
 
 @Composable
@@ -624,7 +900,7 @@ private fun FolderPickerSheet(
             )
             HorizontalDivider()
             LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
-                items(folders, key = { it.id }) { folder ->
+                items(folders, key = { "folder-${it.id}" }) { folder ->
                     val isSelected = selected == folder.id
                     Row(
                         modifier = Modifier

@@ -1,0 +1,27 @@
+name: Backend deploy
+
+on:
+  push:
+    tags: ['backend-v*']
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - run: chmod +x backend/gradlew
+      - name: Build shadowJar
+        working-directory: backend
+        run: ./gradlew shadowJar --no-daemon
+      - name: Deploy via Railway CLI
+        run: |
+          curl -fsSL https://railway.app/install.sh | sh
+          cd backend
+          railway up --service ushrashuvchi-backend --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
