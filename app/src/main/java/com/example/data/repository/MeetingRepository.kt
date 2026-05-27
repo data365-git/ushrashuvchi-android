@@ -103,6 +103,10 @@ class MeetingRepository(
 
     // Shared Moshi instance — also used by post-AI persistence and JSON pruning
     // helpers (e.g. deleteTask refined-JSON cleanup).
+    // Per-meeting mutex registry — guards against double-tap on Generate that would
+    // otherwise concurrently insert duplicate tasks/transcript lines (Gap: race).
+    private val processingMutexes = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.sync.Mutex>()
+
     private val moshi: Moshi = Moshi.Builder()
         .addLast(KotlinJsonAdapterFactory())
         .build()
@@ -387,7 +391,13 @@ class MeetingRepository(
         llmModel: String,
         transcriptionSystemPrompt: String
     ) = withContext(Dispatchers.IO) {
+        val mutex = processingMutexes.computeIfAbsent(meetingId) { kotlinx.coroutines.sync.Mutex() }
+        mutex.lock()
+        try {
         val meeting = meetingDao.getMeetingByIdSync(meetingId) ?: return@withContext
+        // Idempotency guard: if a prior call already completed, don't re-process and
+        // double-insert tasks/transcript lines (Gap: race on double generate-tap).
+        if (meeting.status == MeetingStatus.COMPLETED) return@withContext
 
         // Update status to processing
         meetingDao.updateMeeting(meeting.copy(status = MeetingStatus.PROCESSING))
@@ -618,6 +628,10 @@ class MeetingRepository(
                 generationError = msg
             ))
             throw e
+        }
+        } finally {
+            mutex.unlock()
+            processingMutexes.remove(meetingId)
         }
     }
 

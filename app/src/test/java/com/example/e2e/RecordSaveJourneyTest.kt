@@ -104,8 +104,8 @@ class RecordSaveJourneyTest {
         // Fire two parallel save operations; neither should leave a RECORDING orphan.
         val results = kotlinx.coroutines.coroutineScope {
             listOf(
-                kotlinx.coroutines.async { flow.recordAndSave("concurrent-1", folderId, durationSec = 1) },
-                kotlinx.coroutines.async { flow.recordAndSave("concurrent-2", folderId, durationSec = 1) }
+                async { flow.recordAndSave("concurrent-1", folderId, durationSec = 1) },
+                async { flow.recordAndSave("concurrent-2", folderId, durationSec = 1) }
             ).map { it.await() }
         }
         val orphans = db.meetingDao().getAllMeetingsSync()
