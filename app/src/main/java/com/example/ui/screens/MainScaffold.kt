@@ -118,6 +118,17 @@ fun MainScaffold(
 
     // One-time Xiaomi onboarding dialog
     val prefs = remember { context.getSharedPreferences("ushrashuvchi_prefs", android.content.Context.MODE_PRIVATE) }
+    var showOnboarding by remember { mutableStateOf(!prefs.getBoolean("onboarding_completed", false)) }
+    if (showOnboarding) {
+        OnboardingScreen(
+            viewModel = viewModel,
+            onFinished = {
+                prefs.edit().putBoolean("onboarding_completed", true).apply()
+                showOnboarding = false
+            }
+        )
+        return
+    }
     var showXiaomiDialog by remember {
         mutableStateOf(
             OemHelper.isXiaomi && !prefs.getBoolean("xiaomi_onboarding_seen", false)

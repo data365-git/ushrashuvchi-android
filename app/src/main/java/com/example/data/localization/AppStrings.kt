@@ -176,6 +176,17 @@ data class AppStrings(
     val genErrorAudioUnsupported: String, // "Unsupported audio format (.%1$s). Re-record the meeting."
     // Generation cancel (Gap 7) + dialog dismiss
     val genStateCancel: String,
+    // Task delete confirmation dialog (Gap 8)
+    val deleteTaskTitle: String,
+    val deleteTaskBody: String,
+    val delete: String,
+    val cancel: String,
+    // Sync status (Gap 28)
+    val allSynced: String,
+    val pendingSyncItems: String,   // use %1$d for count
+    // Generation progress (Gap 28)
+    val elapsedGenerating: String,  // use %1$d for elapsed, %2$d for estimate
+    val generatingTakingLong: String,
 )
 
 object Translations {
@@ -340,6 +351,14 @@ object Translations {
         genErrorAudioTooLarge = "Recording is too large (%1\$d MB). Maximum %2\$d MB. Re-record at lower quality or split the file before uploading.",
         genErrorAudioUnsupported = "Unsupported audio format (.%1\$s). Re-record the meeting — legacy formats are not accepted.",
         genStateCancel = "Cancel",
+        deleteTaskTitle = "Delete task?",
+        deleteTaskBody = "This action cannot be undone.",
+        delete = "Delete",
+        cancel = "Cancel",
+        allSynced = "All synced",
+        pendingSyncItems = "%1\$d item(s) pending sync",
+        elapsedGenerating = "Elapsed %1\$ds · about %2\$ds expected",
+        generatingTakingLong = "Taking longer than usual — Gemini may be busy",
     )
 
     val ru = AppStrings(
@@ -503,6 +522,14 @@ object Translations {
         genErrorAudioTooLarge = "Запись слишком большая (%1\$d МБ). Максимум %2\$d МБ. Перезапишите в более низком качестве или разделите файл перед загрузкой.",
         genErrorAudioUnsupported = "Неподдерживаемый формат аудио (.%1\$s). Перезапишите встречу — устаревшие форматы не принимаются.",
         genStateCancel = "Отмена",
+        deleteTaskTitle = "Удалить задачу?",
+        deleteTaskBody = "Это действие нельзя отменить.",
+        delete = "Удалить",
+        cancel = "Отмена",
+        allSynced = "Всё синхронизировано",
+        pendingSyncItems = "%1\$d элем. ожидает синхронизации",
+        elapsedGenerating = "Прошло %1\$dс · ещё около %2\$dс",
+        generatingTakingLong = "Занимает дольше обычного — Gemini может быть занят",
     )
 
     val uz = AppStrings(
@@ -666,6 +693,14 @@ object Translations {
         genErrorAudioTooLarge = "Yozuv juda katta (%1\$d MB). Maksimal %2\$d MB. Past sifatda qayta yozing yoki faylni bo'laklarga bo'ling.",
         genErrorAudioUnsupported = "Qo'llab-quvvatlanmagan audio format (.%1\$s). Uchrashuvni qayta yozing — eski formatlar qabul qilinmaydi.",
         genStateCancel = "Bekor qilish",
+        deleteTaskTitle = "Vazifani o'chirish?",
+        deleteTaskBody = "Bu amalni bekor qilib bo'lmaydi.",
+        delete = "O'chirish",
+        cancel = "Bekor qilish",
+        allSynced = "Hammasi sinxronlangan",
+        pendingSyncItems = "%1\$d element sinxronizatsiyani kutmoqda",
+        elapsedGenerating = "%1\$d s o'tdi · taxminan %2\$d s qoldi",
+        generatingTakingLong = "Odatdagidan uzoq — Gemini band bo'lishi mumkin",
     )
 
     fun get(language: Language): AppStrings = when (language) {

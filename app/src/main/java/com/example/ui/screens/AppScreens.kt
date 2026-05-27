@@ -1465,6 +1465,7 @@ fun TasksTab(
 ) {
     val tasks by viewModel.observeTasks(meetingId).collectAsState(initial = emptyList())
     var editingTask by remember { mutableStateOf<com.example.data.model.Task?>(null) }
+    var taskToDelete by remember { mutableStateOf<com.example.data.model.Task?>(null) }
 
     // Gap 5: previously, TasksTab only branched on tasks.isEmpty() and showed a
     // generic "No tasks" string in every failure scenario. A FAILED meeting in
@@ -1603,7 +1604,7 @@ fun TasksTab(
                             TaskChecklistItemRow(
                                 task = task,
                                 onToggle = { viewModel.toggleTaskCompletion(task) },
-                                onDelete = { viewModel.deleteTask(task) },
+                                onDelete = { taskToDelete = task },
                                 onEdit = { editingTask = task }
                             )
                         }
@@ -1681,6 +1682,24 @@ fun TasksTab(
                 Spacer(Modifier.height(8.dp))
             }
         }
+    }
+
+    taskToDelete?.let { task ->
+        AlertDialog(
+            onDismissRequest = { taskToDelete = null },
+            title = { Text(strings.deleteTaskTitle, fontWeight = FontWeight.Bold) },
+            text = { Text(strings.deleteTaskBody) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteTask(task)
+                    taskToDelete = null
+                }) { Text(strings.delete, color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { taskToDelete = null }) { Text(strings.cancel) }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
     }
 }
 
@@ -2284,8 +2303,8 @@ private fun SettingsAccountTab(
                     Spacer(Modifier.height(4.dp))
                     val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
                     Text(
-                        if (pendingSyncCount == 0) "All synced"
-                        else "$pendingSyncCount item${if (pendingSyncCount == 1) "" else "s"} pending sync",
+                        if (pendingSyncCount == 0) strings.allSynced
+                        else String.format(strings.pendingSyncItems, pendingSyncCount),
                         fontSize = 11.sp,
                         color = if (pendingSyncCount == 0)
                             MaterialTheme.colorScheme.primary
@@ -3052,14 +3071,14 @@ private fun GenerateAiCard(
                 Spacer(Modifier.height(4.dp))
                 val estSec = (estimateMs ?: 30_000L) / 1000
                 Text(
-                    "Elapsed ${elapsedSec}s · about ${estSec}s expected",
+                    String.format(strings.elapsedGenerating, elapsedSec, estSec),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
                 if (elapsedSec > estSec + 30) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Taking longer than usual — Gemini may be busy",
+                        strings.generatingTakingLong,
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.tertiary
                     )
