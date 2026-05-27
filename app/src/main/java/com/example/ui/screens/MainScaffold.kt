@@ -44,7 +44,12 @@ import com.example.audio.RecordingService
 import com.example.audio.RecoveryCheckpoint
 import com.example.data.model.Folder
 import com.example.data.model.Meeting
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
 import com.example.ui.theme.RecordingsPalette
+import com.example.ui.theme.motionMediumSpec
+import com.example.ui.theme.motionShortSpec
 import com.example.ui.viewmodel.AppViewModel
 
 enum class BottomTab(val label: String, val icon: ImageVector, val activeIcon: ImageVector) {
@@ -333,17 +338,18 @@ fun MainScaffold(
                         val forward = targetState.ordinal > initialState.ordinal
                         val direction = if (forward) 1 else -1
                         (androidx.compose.animation.slideInHorizontally(
-                            animationSpec = androidx.compose.animation.core.tween(220)
-                        ) { it * direction } + androidx.compose.animation.fadeIn(
-                            animationSpec = androidx.compose.animation.core.tween(120)
+                            animationSpec = motionMediumSpec()
+                        ) { it / 6 * direction } + androidx.compose.animation.fadeIn(
+                            animationSpec = motionShortSpec()
                         )).togetherWith(
                             androidx.compose.animation.slideOutHorizontally(
-                                animationSpec = androidx.compose.animation.core.tween(220)
-                            ) { -it * direction } + androidx.compose.animation.fadeOut(
-                                animationSpec = androidx.compose.animation.core.tween(120)
+                                animationSpec = motionMediumSpec()
+                            ) { -it / 6 * direction } + androidx.compose.animation.fadeOut(
+                                animationSpec = motionShortSpec()
                             )
-                        )
+                        ).using(SizeTransform(clip = false))
                     },
+                    contentKey = { it },
                     label = "tab_switch",
                     modifier = Modifier.fillMaxSize()
                 ) { tab ->
