@@ -52,6 +52,10 @@ import com.example.data.model.Task
 import com.example.data.model.TranscriptLine
 import com.example.data.model.meetingStatus
 import com.example.data.model.missingSectionKeys
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import com.example.ui.theme.motionMediumSpec
+import com.example.ui.theme.motionShortSpec
 import com.example.ui.viewmodel.AppViewModel
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -1591,12 +1595,18 @@ fun TasksTab(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(tasks, key = { it.id }) { task ->
-                        TaskChecklistItemRow(
-                            task = task,
-                            onToggle = { viewModel.toggleTaskCompletion(task) },
-                            onDelete = { viewModel.deleteTask(task) },
-                            onEdit = { editingTask = task }
-                        )
+                        Box(modifier = Modifier.animateItem(
+                            fadeInSpec = motionShortSpec(),
+                            placementSpec = motionMediumSpec(),
+                            fadeOutSpec = motionShortSpec()
+                        )) {
+                            TaskChecklistItemRow(
+                                task = task,
+                                onToggle = { viewModel.toggleTaskCompletion(task) },
+                                onDelete = { viewModel.deleteTask(task) },
+                                onEdit = { editingTask = task }
+                            )
+                        }
                     }
                 }
             }
@@ -1843,7 +1853,13 @@ fun AskAiScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(chatMessages, key = { it.id }) { msg ->
-                    ChatBubbleItem(msg)
+                    Box(modifier = Modifier.animateItem(
+                        fadeInSpec = motionShortSpec(),
+                        placementSpec = motionMediumSpec(),
+                        fadeOutSpec = motionShortSpec()
+                    )) {
+                        ChatBubbleItem(msg)
+                    }
                 }
 
                 if (isChatLoading) {
@@ -2127,13 +2143,30 @@ fun SettingsScreen(
                 }
             }
             Divider()
-            when (selectedTabIndex) {
-                0 -> SettingsAccountTab(viewModel, strings, currentLang, onNavigateToAllTasks, onNavigateToGlobalAskAi)
-                1 -> SettingsAiTab(viewModel, strings, lastAiError, snackbarHostState, scope)
-                2 -> SettingsRecordingTab(viewModel, strings)
-                3 -> SettingsStorageTab(viewModel, strings, onNavigateToStorage)
-                4 -> SettingsAppearanceTab(viewModel, strings, themeMode)
-                5 -> SettingsDiagnosticsTab(viewModel, aiHealthStatus, lastAiError)
+            AnimatedContent(
+                targetState = selectedTabIndex,
+                transitionSpec = {
+                    val forward = targetState > initialState
+                    val dir = if (forward) 1 else -1
+                    (androidx.compose.animation.slideInHorizontally(motionMediumSpec()) { it / 6 * dir } +
+                     androidx.compose.animation.fadeIn(motionShortSpec())).togetherWith(
+                        androidx.compose.animation.slideOutHorizontally(motionMediumSpec()) { -it / 6 * dir } +
+                        androidx.compose.animation.fadeOut(motionShortSpec())
+                    ).using(SizeTransform(clip = false))
+                },
+                contentKey = { it },
+                label = "settings_tab",
+                modifier = Modifier.fillMaxSize()
+            ) { tab ->
+                when (tab) {
+                    0 -> SettingsAccountTab(viewModel, strings, currentLang, onNavigateToAllTasks, onNavigateToGlobalAskAi)
+                    1 -> SettingsAiTab(viewModel, strings, lastAiError, snackbarHostState, scope)
+                    2 -> SettingsRecordingTab(viewModel, strings)
+                    3 -> SettingsStorageTab(viewModel, strings, onNavigateToStorage)
+                    4 -> SettingsAppearanceTab(viewModel, strings, themeMode)
+                    5 -> SettingsDiagnosticsTab(viewModel, aiHealthStatus, lastAiError)
+                    else -> {}
+                }
             }
         }
     }
@@ -2859,6 +2892,11 @@ fun AllTasksScreen(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .animateItem(
+                                    fadeInSpec = motionShortSpec(),
+                                    placementSpec = motionMediumSpec(),
+                                    fadeOutSpec = motionShortSpec()
+                                )
                                 .clickable { editingTask = task },
                             shape = RoundedCornerShape(16.dp),
                             colors = CardDefaults.cardColors(

@@ -29,6 +29,8 @@ import com.example.ui.theme.DarkAppPalette
 import com.example.ui.theme.LightAppPalette
 import com.example.ui.theme.LocalAppPalette
 import com.example.ui.theme.ThemeMode
+import androidx.compose.animation.Crossfade
+import com.example.ui.theme.motionMediumSpec
 
 class MainActivity : ComponentActivity() {
 
@@ -55,7 +57,12 @@ class MainActivity : ComponentActivity() {
       }
       val palette: AppPaletteSet = if (effectiveDark) DarkAppPalette else LightAppPalette
 
-      MyApplicationTheme(darkTheme = effectiveDark) {
+      Crossfade(
+          targetState = effectiveDark,
+          animationSpec = motionMediumSpec(),
+          label = "theme_crossfade"
+      ) { dark ->
+      MyApplicationTheme(darkTheme = dark) {
           CompositionLocalProvider(LocalAppPalette provides palette) {
         Surface(
           modifier = Modifier.fillMaxSize(),
@@ -188,6 +195,7 @@ class MainActivity : ComponentActivity() {
         }
           } // end CompositionLocalProvider
       } // end MyApplicationTheme
+      } // end Crossfade
     }
   }
 

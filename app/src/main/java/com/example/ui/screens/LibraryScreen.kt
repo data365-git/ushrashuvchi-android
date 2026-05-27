@@ -45,6 +45,8 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.Folder
 import com.example.data.model.Meeting
 import com.example.ui.theme.LocalAppPalette
+import com.example.ui.theme.motionMediumSpec
+import com.example.ui.theme.motionShortSpec
 import com.example.ui.theme.resolveFolderTint
 import com.example.ui.viewmodel.AppViewModel
 import com.example.ui.viewmodel.LibrarySort
@@ -445,7 +447,11 @@ fun LibraryScreen(
                                 }
                                 items(sortedRecordings, key = { "meeting-${it.id}" }) { meeting ->
                                     val isSelected = meeting.id in libSelectedMeetingIds
-                                    Box(modifier = Modifier.padding(bottom = 10.dp)) {
+                                    Box(modifier = Modifier.padding(bottom = 10.dp).animateItem(
+                                        fadeInSpec = motionShortSpec(),
+                                        placementSpec = motionMediumSpec(),
+                                        fadeOutSpec = motionShortSpec()
+                                    )) {
                                         RecordingRow(
                                             meeting = meeting,
                                             selected = isSelected,
@@ -516,7 +522,11 @@ fun LibraryScreen(
                         } else {
                             items(searchResults, key = { "meeting-${it.id}" }) { meeting ->
                                 val isSelected = meeting.id in libSelectedMeetingIds
-                                Box(modifier = Modifier.padding(bottom = 10.dp)) {
+                                Box(modifier = Modifier.padding(bottom = 10.dp).animateItem(
+                                    fadeInSpec = motionShortSpec(),
+                                    placementSpec = motionMediumSpec(),
+                                    fadeOutSpec = motionShortSpec()
+                                )) {
                                     RecordingRow(
                                         meeting = meeting,
                                         selected = isSelected,

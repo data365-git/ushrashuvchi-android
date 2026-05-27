@@ -40,6 +40,8 @@ import kotlinx.coroutines.launch
 import com.example.ui.components.ConfirmDeleteDialog
 import com.example.ui.components.SkeletonCard
 import com.example.ui.theme.RecordingsPalette
+import com.example.ui.theme.motionMediumSpec
+import com.example.ui.theme.motionShortSpec
 import com.example.ui.viewmodel.AppViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -225,8 +227,13 @@ fun RecordingsLibraryScreen(
 
                         AnimatedVisibility(
                             visible = true,
-                            exit = shrinkVertically(animationSpec = tween(200)) +
-                                fadeOut(animationSpec = tween(150))
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = motionShortSpec(),
+                                placementSpec = motionMediumSpec(),
+                                fadeOutSpec = motionShortSpec()
+                            ),
+                            exit = shrinkVertically(animationSpec = motionMediumSpec()) +
+                                fadeOut(animationSpec = motionShortSpec())
                         ) {
                             SwipeToDismissBox(
                                 state = swipeState,

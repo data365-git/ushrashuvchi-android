@@ -31,9 +31,18 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audio.RecorderState
+import com.example.ui.theme.motionMediumSpec
+import com.example.ui.theme.motionShortSpec
 import com.example.data.localization.AppStrings
 import com.example.data.model.Folder
 import com.example.ui.theme.AppPaletteSet
@@ -128,8 +137,32 @@ fun RecorderScreen(
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = palette.background) {
-        when (val state = recorderState) {
-            is RecorderState.Active -> RecordingPanel(
+        AnimatedContent(
+            targetState = recorderState,
+            transitionSpec = {
+                when {
+                    targetState is RecorderState.Saved && initialState is RecorderState.Active ->
+                        (slideInVertically(motionMediumSpec()) { it / 4 } +
+                         fadeIn(motionShortSpec())).togetherWith(
+                            slideOutVertically(motionMediumSpec()) { -it / 4 } +
+                            fadeOut(motionShortSpec())
+                        )
+                    targetState is RecorderState.Active && initialState is RecorderState.Saved ->
+                        (slideInVertically(motionMediumSpec()) { -it / 4 } +
+                         fadeIn(motionShortSpec())).togetherWith(
+                            slideOutVertically(motionMediumSpec()) { it / 4 } +
+                            fadeOut(motionShortSpec())
+                        )
+                    else ->
+                        fadeIn(motionShortSpec()).togetherWith(fadeOut(motionShortSpec()))
+                }.using(SizeTransform(clip = false))
+            },
+            contentKey = { it::class },
+            label = "recorder_state",
+            modifier = Modifier.fillMaxSize()
+        ) { state ->
+            when (state) {
+                is RecorderState.Active -> RecordingPanel(
                 viewModel = viewModel,
                 state = state,
                 strings = strings,
@@ -159,7 +192,7 @@ fun RecorderScreen(
                 onClose = onClose,
                 onRetry = { autoStarted = false }
             )
-            RecorderState.Idle -> {
+            is RecorderState.Idle -> {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(24.dp),
                     verticalArrangement = Arrangement.Center,
@@ -225,6 +258,7 @@ fun RecorderScreen(
                     }
                 }
             }
+        }
         }
     }
 }
