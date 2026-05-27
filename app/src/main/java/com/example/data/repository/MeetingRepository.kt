@@ -611,6 +611,8 @@ class MeetingRepository(
             // Persist a human-readable reason so the UI can render Retry across recompose
             // and after relaunch (Gap 5) — not just a transient _aiError flow.
             val msg = e.localizedMessage ?: e.message ?: e::class.java.simpleName
+            io.sentry.Sentry.addBreadcrumb("processMeetingWithGemini: ${e.javaClass.simpleName} — ${e.message?.take(120)}")
+            io.sentry.Sentry.captureException(e)
             meetingDao.updateMeeting(meeting.copy(
                 status = MeetingStatus.FAILED,
                 generationError = msg

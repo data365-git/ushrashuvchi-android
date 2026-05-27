@@ -167,4 +167,7 @@ interface MeetingDao {
 
     @Insert
     suspend fun insertTranscriptLine(line: TranscriptLine): Long
+
+    @Query("DELETE FROM meetings")
+    suspend fun deleteAllMeetings()
 }

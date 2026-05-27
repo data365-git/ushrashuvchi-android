@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import io.sentry.Sentry
 import java.io.File
 import java.util.UUID
 
@@ -567,6 +568,44 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun setThemeMode(mode: com.example.ui.theme.ThemeMode) {
         _themeMode.value = mode
         sharedPrefs.edit().putString("theme_mode", mode.name).apply()
+    }
+
+    // --- Data & Privacy (Gap 31) ---
+
+    fun deleteAllData() {
+        viewModelScope.launch {
+            try { fileManager.root.deleteRecursively() } catch (_: Exception) {}
+            db.meetingDao().deleteAllMeetings()
+            db.folderDao().deleteAllFolders()
+            val apiKey = sharedPrefs.getString("gemini_api_key", "") ?: ""
+            sharedPrefs.edit().clear()
+                .putString("gemini_api_key", apiKey)
+                .putBoolean("onboarding_completed", true)
+                .apply()
+        }
+    }
+
+    fun exportMeetingsJson(context: android.content.Context) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val meetings = db.meetingDao().getAllMeetingsSync()
+                val json = meetings.joinToString(",\n", "[\n", "\n]") { m ->
+                    """  {"id":${m.id},"title":"${m.title}","status":"${m.status.name}","date":${m.date},"folder":"${m.folders}"}"""
+                }
+                val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS)
+                    ?: context.filesDir
+                val file = java.io.File(dir, "meetingmind_export_${System.currentTimeMillis()}.json")
+                file.writeText(json)
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context, "${context.packageName}.provider", file)
+                val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "application/json"
+                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(android.content.Intent.createChooser(intent, "Export meetings"))
+            } catch (_: Exception) {}
+        }
     }
 
     fun toggleTheme() {
@@ -1216,6 +1255,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 } catch (_: Exception) {}
                 throw e
             } catch (e: Exception) {
+                Sentry.addBreadcrumb("generateAiSummary: meetingId=$meetingId ${e.javaClass.simpleName} — ${e.message?.take(120)}")
                 _aiError.value = e.localizedMessage ?: "Generation failed"
             } finally {
                 _aiProcessingMeetingId.value = null
@@ -1336,6 +1376,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
                             .setUsage(android.media.AudioAttributes.USAGE_MEDIA).build()
                     )
+                    // Gap 35: keep CPU alive during playback so audio doesn't cut when screen turns off
+                    setWakeMode(getApplication(), android.os.PowerManager.PARTIAL_WAKE_LOCK)
                     setDataSource(resolvedPath)
                     setOnPreparedListener {
                         _durationMs.value = it.duration.toLong()
@@ -1350,7 +1392,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         it.seekTo(0)
                         playbackJob?.cancel()
                     }
-                    setOnErrorListener { _, _, _ ->
+                    setOnErrorListener { _, what, extra ->
+                        Sentry.addBreadcrumb("MediaPlayer error: what=$what extra=$extra")
                         _isPlaying.value = false
                         playbackJob?.cancel()
                         true

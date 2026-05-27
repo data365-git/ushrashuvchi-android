@@ -2314,6 +2314,57 @@ private fun SettingsAccountTab(
                 }
             }
         }
+
+        Spacer(Modifier.height(16.dp))
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Data & Privacy", fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+
+                var showDeleteAllConfirm by remember { mutableStateOf(false) }
+                TextButton(
+                    onClick = { showDeleteAllConfirm = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Icon(Icons.Default.DeleteForever, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Delete all my data", color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f))
+                }
+
+                val exportContext = LocalContext.current
+                TextButton(
+                    onClick = { viewModel.exportMeetingsJson(exportContext) },
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Export all meetings (JSON)", modifier = Modifier.weight(1f))
+                }
+
+                if (showDeleteAllConfirm) {
+                    AlertDialog(
+                        onDismissRequest = { showDeleteAllConfirm = false },
+                        title = { Text("Delete all data?", fontWeight = FontWeight.Bold) },
+                        text = { Text("This permanently deletes ALL recordings, transcripts, tasks, and chat history. Audio files on disk will also be removed. This cannot be undone.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                viewModel.deleteAllData()
+                                showDeleteAllConfirm = false
+                            }) { Text("Delete everything", color = MaterialTheme.colorScheme.error) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDeleteAllConfirm = false }) { Text("Cancel") }
+                        },
+                        shape = RoundedCornerShape(20.dp)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -2675,6 +2726,33 @@ private fun SettingsDiagnosticsTab(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 16.dp)
     ) {
+        // What's new
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.NewReleases, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("What's new in v1.0", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+                Spacer(Modifier.height(4.dp))
+                val changes = listOf(
+                    "🎙 M4A recording with HE-AAC — smaller files, better quality",
+                    "✨ AI pipeline: transcript + summary + tasks in one pass",
+                    "📁 Folder tree with sub-folders, rename, reorder",
+                    "☁️ Cloud sync & shareable meeting links",
+                    "🌊 Live waveform during recording",
+                    "🏠 Home-screen widgets (compact + hero)",
+                    "🌐 Three languages: English, Russian, Uzbek",
+                    "🔄 Crash recovery — resumes interrupted recordings"
+                )
+                changes.forEach { line ->
+                    Text(line, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f))
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+
         // AI Health status
         Surface(
             modifier = Modifier.fillMaxWidth(),

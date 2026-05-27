@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import io.sentry.Sentry
 import java.io.File
 
 class RecordingService : Service() {
@@ -220,6 +221,8 @@ class RecordingService : Service() {
             )
             tickHandler.post(tickRunnable)
         } catch (e: Exception) {
+            Sentry.addBreadcrumb("RecordingService: start failed — ${e.message?.take(80)}")
+            Sentry.captureException(e)
             _state.value = RecorderState.Error("Failed to start recording: ${e.message}", recoverable = false)
             stopSelf()
         }
@@ -288,7 +291,9 @@ class RecordingService : Service() {
                     )
                     fileManager?.writeSidecar(audioFile, sidecar)
                     db?.recordingSessionDao()?.updateState(sid, "COMPLETED", System.currentTimeMillis())
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    Sentry.addBreadcrumb("RecordingService: sidecar/session write failed — ${e.message?.take(80)}")
+                }
             }
         } else {
             _state.value = RecorderState.Idle

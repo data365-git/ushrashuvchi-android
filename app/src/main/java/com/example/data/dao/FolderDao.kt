@@ -58,4 +58,7 @@ interface FolderDao {
 
     @Query("UPDATE folders SET sortOrder = :order WHERE id = :id")
     suspend fun setSortOrder(id: Int, order: Int)
+
+    @Query("DELETE FROM folders")
+    suspend fun deleteAllFolders()
 }
