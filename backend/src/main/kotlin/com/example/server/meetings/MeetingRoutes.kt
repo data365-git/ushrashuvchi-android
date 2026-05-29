@@ -1,6 +1,7 @@
 package com.example.server.meetings
 
 import com.example.server.auth.DeviceAuth.deviceId
+import com.example.server.db.Folders
 import com.example.server.db.Meetings
 import com.example.server.db.TranscriptLines
 import com.example.server.db.Tasks
@@ -33,7 +34,8 @@ data class UpsertMeetingRequest(
     val audioSource: String,
     val summary: String? = null,
     val chaptersJson: String? = null,
-    val refinedJson: String? = null
+    val refinedJson: String? = null,
+    val folderId: String? = null
 )
 
 @Serializable
@@ -51,8 +53,37 @@ data class MeetingResponse(
     val audioObjectKey: String?,
     val audioSizeBytes: Long?,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val folderId: String? = null,
+    val videoObjectKey: String? = null,
+    val videoStatus: String? = null,
+    val hasAudio: Boolean = false,
+    val hasVideo: Boolean = false
 )
+
+@Serializable
+data class MeetingDetailResponse(
+    val id: String,
+    val clientId: Int,
+    val title: String,
+    val date: Long,
+    val durationSeconds: Long,
+    val status: String,
+    val audioSource: String,
+    val summary: String?,
+    val chaptersJson: String?,
+    val refinedJson: String?,
+    val folderId: String?,
+    val videoObjectKey: String?,
+    val videoStatus: String?,
+    val hasAudio: Boolean,
+    val hasVideo: Boolean,
+    val transcript: List<TranscriptLineDto>,
+    val tasks: List<TaskDto>
+)
+
+@Serializable
+data class PatchMeetingRequest(val folderId: String? = null)
 
 @Serializable
 data class TranscriptLineDto(
@@ -92,6 +123,7 @@ fun Route.meetingRoutes() {
                         it[Meetings.summary] = req.summary
                         it[Meetings.chaptersJson] = req.chaptersJson
                         it[Meetings.refinedJson] = req.refinedJson
+                        it[Meetings.folderId] = req.folderId?.let { UUID.fromString(it) }
                         it[Meetings.updatedAt] = Instant.now()
                     }
                     existing[Meetings.id].value
@@ -109,6 +141,7 @@ fun Route.meetingRoutes() {
                         it[summary] = req.summary
                         it[chaptersJson] = req.chaptersJson
                         it[refinedJson] = req.refinedJson
+                        it[folderId] = req.folderId?.let { UUID.fromString(it) }
                         it[createdAt] = Instant.now()
                         it[updatedAt] = Instant.now()
                     }
@@ -165,12 +198,14 @@ fun Route.meetingRoutes() {
             call.respond(HttpStatusCode.OK)
         }
 
-        // GET /meetings — list for this device
+        // GET /meetings — list for this device (non-deleted), dashboard-friendly
         get("/meetings") {
             val principal = call.principal<JWTPrincipal>()!!
             val devId = UUID.fromString(principal.deviceId())
             val list = transaction {
-                Meetings.select { Meetings.deviceId eq devId }
+                Meetings.select {
+                    (Meetings.deviceId eq devId) and Meetings.deletedAt.isNull()
+                }
                     .orderBy(Meetings.date, SortOrder.DESC)
                     .map { row ->
                         MeetingResponse(
@@ -187,11 +222,104 @@ fun Route.meetingRoutes() {
                             audioObjectKey = row[Meetings.audioObjectKey],
                             audioSizeBytes = row[Meetings.audioSizeBytes],
                             createdAt = row[Meetings.createdAt].toEpochMilli(),
-                            updatedAt = row[Meetings.updatedAt].toEpochMilli()
+                            updatedAt = row[Meetings.updatedAt].toEpochMilli(),
+                            folderId = row[Meetings.folderId]?.value?.toString(),
+                            videoObjectKey = row[Meetings.videoObjectKey],
+                            videoStatus = row[Meetings.videoStatus],
+                            hasAudio = row[Meetings.audioObjectKey] != null,
+                            hasVideo = row[Meetings.videoStatus] == "READY"
                         )
                     }
             }
             call.respond(list)
+        }
+
+        // GET /meetings/{id} — full detail with transcript + tasks
+        get("/meetings/{id}") {
+            val principal = call.principal<JWTPrincipal>()!!
+            val devId = UUID.fromString(principal.deviceId())
+            val meetingId = UUID.fromString(call.parameters["id"]!!)
+
+            val detail = transaction {
+                val row = Meetings.select {
+                    (Meetings.id eq meetingId) and
+                    (Meetings.deviceId eq devId) and
+                    Meetings.deletedAt.isNull()
+                }.firstOrNull() ?: return@transaction null
+
+                val transcript = TranscriptLines.select { TranscriptLines.meetingId eq meetingId }
+                    .orderBy(TranscriptLines.tsStartMs, SortOrder.ASC)
+                    .map { l ->
+                        TranscriptLineDto(
+                            tsStartMs = l[TranscriptLines.tsStartMs],
+                            tsEndMs = l[TranscriptLines.tsEndMs],
+                            speaker = l[TranscriptLines.speaker],
+                            text = l[TranscriptLines.text]
+                        )
+                    }
+
+                val tasks = Tasks.select { Tasks.meetingId eq meetingId }
+                    .map { t ->
+                        TaskDto(
+                            title = t[Tasks.title],
+                            assignee = t[Tasks.assignee],
+                            isCompleted = t[Tasks.isCompleted],
+                            dueAt = t[Tasks.dueAt]?.toEpochMilli()
+                        )
+                    }
+
+                MeetingDetailResponse(
+                    id = row[Meetings.id].value.toString(),
+                    clientId = row[Meetings.clientId],
+                    title = row[Meetings.title],
+                    date = row[Meetings.date].toEpochMilli(),
+                    durationSeconds = row[Meetings.durationSeconds],
+                    status = row[Meetings.status],
+                    audioSource = row[Meetings.audioSource],
+                    summary = row[Meetings.summary],
+                    chaptersJson = row[Meetings.chaptersJson],
+                    refinedJson = row[Meetings.refinedJson],
+                    folderId = row[Meetings.folderId]?.value?.toString(),
+                    videoObjectKey = row[Meetings.videoObjectKey],
+                    videoStatus = row[Meetings.videoStatus],
+                    hasAudio = row[Meetings.audioObjectKey] != null,
+                    hasVideo = row[Meetings.videoStatus] == "READY",
+                    transcript = transcript,
+                    tasks = tasks
+                )
+            }
+
+            if (detail == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "not_found"))
+            } else {
+                call.respond(detail)
+            }
+        }
+
+        // PATCH /meetings/{id} — update folderId (for dashboard folder moves)
+        patch("/meetings/{id}") {
+            val principal = call.principal<JWTPrincipal>()!!
+            val devId = UUID.fromString(principal.deviceId())
+            val meetingId = UUID.fromString(call.parameters["id"]!!)
+            val req = call.receive<PatchMeetingRequest>()
+
+            val owned = transaction {
+                Meetings.select {
+                    (Meetings.id eq meetingId) and (Meetings.deviceId eq devId)
+                }.any()
+            }
+            if (!owned) {
+                call.respond(HttpStatusCode.Forbidden, mapOf("error" to "not_your_meeting"))
+                return@patch
+            }
+
+            transaction {
+                Meetings.update({ Meetings.id eq meetingId }) {
+                    it[folderId] = req.folderId?.let { fid -> UUID.fromString(fid) }
+                    it[updatedAt] = Instant.now()
+                }
+            }
+            call.respond(HttpStatusCode.OK)
         }
     }
 }

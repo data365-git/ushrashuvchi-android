@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ushrashuvchi Recorder</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: #1a1a2e;
+        color: #e0e0e0;
+        width: 240px;
+        padding: 20px 16px 16px;
+        user-select: none;
+      }
+
+      h1 {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #9b9bc8;
+        margin-bottom: 16px;
+        text-align: center;
+      }
+
+      #btn {
+        width: 100%;
+        padding: 10px;
+        border: none;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s, transform 0.1s;
+      }
+      #btn:active { transform: scale(0.97); }
+      #btn.idle    { background: #e53935; color: #fff; }
+      #btn.recording { background: #424267; color: #e0e0e0; }
+      #btn:disabled { opacity: 0.45; cursor: default; }
+
+      #timer {
+        text-align: center;
+        font-size: 22px;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.05em;
+        margin: 12px 0 8px;
+        color: #ffffff;
+        min-height: 28px;
+      }
+
+      #status {
+        text-align: center;
+        font-size: 11px;
+        color: #9b9bc8;
+        min-height: 16px;
+      }
+
+      #consent {
+        margin-top: 14px;
+        font-size: 10px;
+        color: #6c6c8a;
+        text-align: center;
+        line-height: 1.4;
+        border-top: 1px solid #2e2e4a;
+        padding-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Ushrashuvchi</h1>
+    <div id="timer">0:00:00</div>
+    <button id="btn" class="idle">Start Recording</button>
+    <div id="status">Ready</div>
+    <div id="consent">This records all meeting participants.</div>
+    <script src="popup.js"></script>
+  </body>
+</html>

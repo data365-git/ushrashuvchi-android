@@ -12,6 +12,14 @@ object Devices : UUIDTable("devices") {
     val lastSeenAt = timestamp("last_seen_at").nullable()
 }
 
+object Folders : UUIDTable("folders") {
+    val deviceId = reference("device_id", Devices, onDelete = ReferenceOption.CASCADE)
+    val name = varchar("name", 200)
+    val parentId = reference("parent_id", Folders).nullable()
+    val sortOrder = integer("sort_order").default(0)
+    val createdAt = timestamp("created_at").default(Instant.now())
+}
+
 object Meetings : UUIDTable("meetings") {
     val deviceId = reference("device_id", Devices, onDelete = ReferenceOption.CASCADE)
     val clientId = integer("client_id")  // local Room ID on device
@@ -30,6 +38,12 @@ object Meetings : UUIDTable("meetings") {
     val createdAt = timestamp("created_at").default(Instant.now())
     val updatedAt = timestamp("updated_at").default(Instant.now())
     val deletedAt = timestamp("deleted_at").nullable()
+    val folderId = reference("folder_id", Folders).nullable()
+    val videoObjectKey = varchar("video_object_key", 500).nullable()
+    val videoSizeBytes = long("video_size_bytes").nullable()
+    val videoMime = varchar("video_mime", 100).nullable()
+    val videoStatus = varchar("video_status", 32).nullable()
+    val videoExpiresAt = timestamp("video_expires_at").nullable()
     init {
         uniqueIndex("uq_device_client", deviceId, clientId)
     }
@@ -49,6 +63,14 @@ object Tasks : LongIdTable("tasks") {
     val assignee = varchar("assignee", 200)
     val isCompleted = bool("is_completed").default(false)
     val dueAt = timestamp("due_at").nullable()
+}
+
+object PairingCodes : UUIDTable("pairing_codes") {
+    val code = varchar("code", 6)
+    val deviceId = reference("device_id", Devices, onDelete = ReferenceOption.CASCADE)
+    val expiresAt = timestamp("expires_at")
+    val claimedAt = timestamp("claimed_at").nullable()
+    val createdAt = timestamp("created_at").default(Instant.now())
 }
 
 object ShareTokens : org.jetbrains.exposed.sql.Table("share_tokens") {

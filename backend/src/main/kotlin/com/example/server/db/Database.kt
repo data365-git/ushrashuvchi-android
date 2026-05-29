@@ -39,7 +39,7 @@ object Db {
             Database.connect(ds)
             transaction {
                 SchemaUtils.createMissingTablesAndColumns(
-                    Devices, Meetings, TranscriptLines, Tasks, ShareTokens
+                    Devices, Folders, Meetings, TranscriptLines, Tasks, ShareTokens, PairingCodes
                 )
             }
             logger.info("Connected and schema verified")
